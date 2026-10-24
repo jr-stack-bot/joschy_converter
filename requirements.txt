@@ -1,0 +1,32 @@
+# Feste Paketversionen fuer build_exe.bat (geprueft: Windows 64 Bit, Python 3.11 bis 3.14).
+# Nur Pakete aus PyPI; bei Aenderungen bitte mit build_exe.bat neu bauen und kurz testen.
+#
+# --- Pflicht (ohne diese Pakete bricht build_exe.bat ab)
+pillow==13.0.0
+tkinterdnd2==0.6.4
+pyinstaller==6.22.3
+openpyxl==3.1.5
+pypdf==6.21.2
+qrcode==8.2
+# PyMuPDF bewusst 1.28.x: Version 2.0 zieht numpy/onnxruntime/pymupdf4llm nach (exe viel groesser)
+pymupdf==1.28.2
+imageio-ffmpeg==0.6.0
+python-docx==1.2.0
+python-pptx==1.0.2
+xlrd==2.0.2
+olefile==0.47
+striprtf==0.0.34
+pdfplumber==0.11.10
+#
+# --- Optional (fehlt eines, fehlt nur die zugehoerige Funktion: HEIC, Tray, Office, Texterkennung)
+pillow-heif==1.8.1
+pystray==0.19.5
+pywin32==312
+# winrt bewusst 3.2.x: ab 4.x ist der Aufbau der Pakete grundlegend anders (ungetestet)
+winrt-runtime==3.2.1
+winrt-Windows.Foundation==3.2.1
+winrt-Windows.Foundation.Collections==3.2.1
+winrt-Windows.Globalization==3.2.1
+winrt-Windows.Graphics.Imaging==3.2.1
+winrt-Windows.Media.Ocr==3.2.1
+winrt-Windows.Storage.Streams==3.2.1

@@ -1,0 +1,83 @@
+KREIS-KONVERTER – LIZENZEN UND HINWEISE ZU FREMDSOFTWARE
+=========================================================
+
+Kreis-Konverter © JOSCHY – Lizenz: AGPL-3.0
+(GNU Affero General Public License, Version 3; Lizenztext: LICENSE bzw. AGPL-3.0.txt).
+Das Programm wird kostenlos weitergegeben. Der vollständige Quellcode steht unter
+    https://github.com/jr-stack-bot/joschy_converter
+
+Das Programm enthält folgende Fremdsoftware. Für diese gelten ausschließlich die
+jeweiligen Lizenzen der Urheber; die vollständigen Lizenztexte liegen
+in diesem Ordner bei.
+
+
+1) FFmpeg (Audio- und Video-Umwandlung)
+---------------------------------------
+Version:   FFmpeg 7.1 "essentials build" von www.gyan.dev (Windows x64),
+           geliefert über das Python-Paket imageio-ffmpeg 0.6.0
+           (Datei ffmpeg-win-x86_64-v7.1.exe aus imageio-binaries)
+Lizenz:    GNU General Public License Version 3 (GPL-3.0)
+           (Build mit --enable-gpl --enable-version3; enthält u. a. x264, x265)
+           Lizenztext: GPL-3.0.txt
+FFmpeg ist ein eigenständiges Programm. Der Kreis-Konverter startet es nur
+als separaten Prozess; es wird unverändert mitgeliefert.
+Quellcode:
+  - FFmpeg 7.1:        https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz
+  - Build-Angaben und Quellen der eingebundenen Bibliotheken (gyan.dev):
+                       https://www.gyan.dev/ffmpeg/builds/
+                       https://github.com/GyanD/codexffmpeg/releases/tag/7.1
+  - Paket/Binärdatei:  https://github.com/imageio/imageio-ffmpeg
+                       https://github.com/imageio/imageio-binaries
+
+
+2) 7-Zip (7z erstellen, 7z/RAR entpacken)
+-----------------------------------------
+Dateien:   7z.exe, 7z.dll (x64) – unverändert aus dem offiziellen Paket
+Urheber:   Copyright (C) 1999-2026 Igor Pavlov
+Lizenz:    GNU Lesser General Public License (LGPL-2.1 oder später),
+           teilweise BSD-3-Clause und BSD-2-Clause,
+           sowie für den RAR-Entpacker die "unRAR license restriction":
+           Der unRAR-Code darf NICHT dazu verwendet werden, den
+           RAR-Kompressionsalgorithmus nachzubauen (der Kreis-Konverter
+           erstellt deshalb keine RAR-Archive, er entpackt sie nur).
+           Vollständiger Lizenztext: 7-Zip_License.txt, LGPL-2.1.txt
+Webseite/Quellcode: https://www.7-zip.org/
+                    https://github.com/ip7z/7zip/releases
+
+
+3) Verwendete Python-Pakete (in die exe eingebaut)
+--------------------------------------------------
+Python 3 (Laufzeit)          PSF License 2.0
+Tcl/Tk (Oberfläche)          Tcl/Tk License (BSD-artig)
+Pillow                       MIT-CMU (HPND)
+tkinterdnd2 / tkdnd          MIT / BSD-artig
+openpyxl, et_xmlfile         MIT
+pypdf                        BSD-3-Clause
+pdfplumber, pdfminer.six     MIT
+PyMuPDF (MuPDF)              GNU AGPL-3.0 (alternativ kommerzielle Lizenz von Artifex)
+                             Lizenztext: AGPL-3.0.txt
+                             Quellcode: https://github.com/pymupdf/PyMuPDF
+qrcode                       BSD
+python-docx                  MIT
+python-pptx                  MIT
+XlsxWriter                   BSD-2-Clause
+lxml (libxml2, libxslt)      BSD-3-Clause (libxml2/libxslt: MIT)
+xlrd                         BSD
+olefile                      BSD-2-Clause
+striprtf                     BSD-3-Clause
+imageio-ffmpeg               BSD-2-Clause (das enthaltene FFmpeg: siehe Punkt 1)
+pillow-heif                  BSD-3-Clause; die Binärdateien enthalten
+                             libheif und libde265 (LGPL-3.0, LGPL-3.0.txt) sowie
+                             x265 (GPL-2.0, GPL-2.0.txt) –
+                             Quellen: https://github.com/bigcat88/pillow_heif
+pystray, six                 LGPL-3.0 (LGPL-3.0.txt) / MIT
+pywin32                      PSF License
+winrt-* (pywinrt)            MIT
+PyInstaller (Startprogramm)  GPL-2.0 mit Ausnahme für den Bootloader
+                             (erlaubt die freie Weitergabe der erstellten exe)
+
+
+Lizenztexte in diesem Ordner
+----------------------------
+GPL-3.0.txt, GPL-2.0.txt, LGPL-2.1.txt, LGPL-3.0.txt, AGPL-3.0.txt,
+7-Zip_License.txt

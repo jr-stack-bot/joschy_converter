@@ -1,0 +1,98 @@
+KREIS-KONVERTER  -  Kurzanleitung
+==================================
+
+Der Kreis-Konverter ist ein rundes Fenster, auf das man Dateien zieht. Er wandelt sie in das
+eingestellte Format um. Alles arbeitet auf dem eigenen PC, es wird nichts ins Internet geschickt.
+Auf dem Zielrechner muss nichts installiert werden: KreisKonverter.exe einfach starten.
+
+
+WAS DAS PROGRAMM KANN
+---------------------
+Bild      PNG, JPG, WEBP, BMP, GIF, TIFF, ICO, SVG, HEIC
+          Verkleinern: 50 %, 1920 px, 1280 px, 800 px (Ergebnis im Unterordner "Verkleinert")
+Office    DOCX (Word), XLSX (Excel), PPTX (PowerPoint)
+PDF       PDF erstellen, PDF komprimieren, PDF teilen (jede Seite einzeln),
+          PDFs zusammenführen, PDF zu Bild, Text erkennen (OCR, nutzt die Texterkennung von Windows)
+Daten     CSV, JSON, XML, TXT, MD
+E-Book    EPUB
+Archiv    ZIP und 7Z erstellen - einzeln je Datei oder "(alle)" = alles in ein Archiv
+          Entpacken: ZIP, 7Z und RAR
+QR        QR-Code aus einem Text oder einer Internetadresse erzeugen
+Audio     MP3, WAV, FLAC, OGG, AAC, M4A
+Video     MP4, MKV, WEBM, AVI, MOV
+
+FORMAT WÄHLEN: Passt eine Datei nicht zum eingestellten Format (z. B. eine MP3 bei "PNG"),
+zeigt der Kreis "FORMAT WÄHLEN" und bietet nur die Formate an, die für diese Datei möglich sind.
+Mit den Pfeilen auswählen, mit Enter (oder Klick in die Mitte) starten, mit Esc abbrechen.
+
+Die fertigen Dateien landen im selben Ordner wie die Originale (Originale bleiben erhalten),
+außer man hat im Menü einen Zielordner gewählt. Gleichnamige Dateien werden nicht überschrieben.
+
+
+BEDIENUNG MIT DER MAUS
+----------------------
+- Dateien oder Ordner auf den Kreis ziehen          -> Umwandlung startet
+- Klick auf das Symbol in der Mitte                  -> Dateien auswählen
+- Klick auf die Pfeile links/rechts am Formatfeld    -> Format wechseln
+- Klick auf das Formatfeld selbst                    -> Liste aller Formate
+- Knopf oben links (drei Striche) oder Rechtsklick   -> Menü
+- Knopf oben rechts (X)                              -> Beenden
+- Kreis mit gedrückter Maustaste ziehen              -> Fenster verschieben
+  (die Stelle wird gemerkt und beim nächsten Start wieder benutzt)
+- Doppelklick                                        -> kleiner Mini-Kreis / wieder groß
+  (oder ins Tray neben der Uhr, wenn im Menü "Doppelklick > ins Tray" eingeschaltet ist)
+- Während der Arbeit: Klick auf "ABBRECHEN"; nach dem Ende: Klick = weiter
+
+
+BEDIENUNG MIT DER TASTATUR
+--------------------------
+Pfeil links / rechts   Format wechseln
+Pfeil hoch / runter    Kategorie wechseln (Bild, Office, PDF, ...)
+Enter, Leertaste, O    Dateien auswählen (beim QR-Code: Text eingeben)
+F                      Liste aller Formate
+M, F10 oder Menütaste  Menü
+Z                      Zielordner wählen
+Esc                    Beenden (während einer Umwandlung: Abbrechen; nach dem Ende: zurück)
+H                      nach einer Umwandlung mit Fehlern oder Warnungen: Details anzeigen
+Im Modus FORMAT WÄHLEN: Pfeile = Format, Enter = Start, Esc = Abbrechen
+
+
+DAS MENÜ
+--------
+Zielordner wählen/zurücksetzen, Farbdesign, Qualität (100/92/85/75 %), Ordner danach öffnen,
+immer im Vordergrund, Töne, EXIF-Daten (z. B. Aufnahmeort) aus Fotos entfernen, Web-Voreinstellung,
+Ordner überwachen (neue Dateien dort werden automatisch umgewandelt), Protokoll, Lizenzen, Beenden.
+
+
+STARTEN UND BAUEN
+-----------------
+Fertige Datei:   KreisKonverter.exe doppelklicken.
+Ohne exe:        start.bat doppelklicken (Python 3 muss installiert sein).
+exe selbst bauen: build_exe.bat doppelklicken. Voraussetzung: Python 3.11 bis 3.14 von python.org
+                 (beim Installieren "Add python.exe to PATH" anhaken) und Internet. Das Skript lädt
+                 die Pakete in festen Versionen (requirements.txt) und 7-Zip herunter.
+                 Ergebnis: dist\KreisKonverter.exe - diese eine Datei kann weitergegeben werden.
+
+
+EINSTELLUNGEN UND FEHLERPROTOKOLL
+---------------------------------
+Ordner: %LOCALAPPDATA%\KreisKonverter
+        (in die Adresszeile des Explorers eingeben und Enter drücken)
+  einstellungen.json   alle Einstellungen inkl. Fensterposition - löschen = Werkseinstellung
+  kreis_fehler.log     Fehlerprotokoll (auch über Menü > Protokoll > "Fehler-Log öffnen")
+
+
+LIZENZ UND QUELLCODE
+--------------------
+Der Kreis-Konverter ist freie Software unter der GNU Affero General Public License, Version 3
+(AGPL-3.0). Der vollständige Lizenztext steht in der Datei LICENSE, der Quellcode unter
+    https://github.com/jr-stack-bot/joschy_converter
+Wer das Programm (auch verändert) weitergibt, muss den Empfängern den Quellcode unter derselben
+Lizenz zugänglich machen.
+
+Das Programm enthält fremde Software, u. a. FFmpeg (für Audio/Video) und 7-Zip (für 7Z/RAR).
+Deren Lizenzen und die eigene Lizenz stehen im Menü unter "Lizenzen" (dort auch der Link zum
+Quellcode) und im Ordner "lizenzen", der zum Programm gehört.
+Wer die exe weitergibt, sollte den Ordner "lizenzen" und die Datei LICENSE mitgeben.
+
+© JOSCHY – Lizenz: AGPL-3.0

@@ -1,0 +1,10 @@
+build/
+dist/
+tools/
+__pycache__/
+*.pyc
+*.log
+# Zwischenspeicher von build_exe.bat (komprimiertes ffmpeg)
+_ffmpeg_cache/
+# optionale private Zusatzmodule gehören nicht ins Repository
+erweiterungen.py
