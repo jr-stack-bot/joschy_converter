@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Ergebnis: EINE einzelne, vollständig eigenständige Datei  dist\KreisKonverter.exe
 # Eingebaut sind: ffmpeg (Audio/Video), 7-Zip (7z/RAR), Lizenztexte (inkl. LICENSE = AGPL-3.0), PDF-Engine, PDF-Tabellen (pdfplumber), Word/Excel/PowerPoint-Konverter, Windows-Texterkennung (OCR),
-# HEIC, QR-Code, Tray. Auf dem Zielrechner muss NICHTS installiert werden.
+# HEIC, QR-Code, Tray, JAI-Sprachansagen (falls Ordner jai vorhanden). Auf dem Zielrechner muss NICHTS installiert werden.
 #
 # Schnellerer Start: unten bei "EXE" den Block auf ONEDIR umstellen (siehe Kommentar) - dann entsteht
 # der Ordner dist\KreisKonverter\ (ideal zusammen mit einem Inno-Setup-Installer).
@@ -92,6 +92,18 @@ datas[:] = [d for d in datas if not str(d[0]).lower().endswith('.onnx')]
 datas.append((ffmpeg_einbetten(), '.'))
 datas.extend(siebenzip_einbetten())
 datas.extend(lizenzen_einbetten())
+
+
+def jai_einbetten():
+    """Sprachansagen der JAI-Stimme (Ordner 'jai', *.mp3) – nur wenn der Ordner existiert.
+    Ohne den Ordner läuft das Programm normal, die Ansagen entfallen dann still."""
+    ordner = os.path.join(BASIS, 'jai')
+    if not os.path.isdir(ordner):
+        return []
+    return [(os.path.join(ordner, f), 'jai') for f in sorted(os.listdir(ordner)) if f.lower().endswith('.mp3')]
+
+
+datas.extend(jai_einbetten())
 
 symbol = os.path.join(BASIS, 'kreis.ico')
 

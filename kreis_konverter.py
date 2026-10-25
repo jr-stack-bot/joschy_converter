@@ -605,6 +605,75 @@ def spiele_sound(art):
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ------------------------------------------------------------------ JAI (Sprachansagen)
+class JAI:
+    """Kurze Sprachansagen aus jai/<id>.mp3 (in der exe aus _MEIPASS, sonst neben dem Skript).
+    Wiedergabe über Windows-MCI (winmm, per ctypes) in einem eigenen Thread – keine Zusatzpakete.
+    Eine neue Ansage unterbricht die laufende. Fehlt der Ordner oder ein Clip oder klappt die
+    Wiedergabe nicht, passiert einfach nichts."""
+    ALIAS = "kreis_jai"
+
+    def __init__(self, mci=None):
+        self.an = False
+        self._mci = mci                 # Testen: eigene Funktion statt winmm
+        self._auftraege = queue.Queue()
+        self._thread = None
+        self._offen = False
+
+    @staticmethod
+    def ordner():
+        return os.path.join(ressourcen_ordner(), "jai")
+
+    def clip(self, cid):
+        pfad = os.path.join(self.ordner(), f"{cid}.mp3")
+        return pfad if os.path.isfile(pfad) else None
+
+    def _sende(self, befehl):
+        if self._mci is None:
+            import ctypes
+            winmm = ctypes.windll.winmm
+            fn = winmm.mciSendStringW
+
+            def mci(b):
+                return fn(b, None, 0, None)
+            self._mci = mci
+        return self._mci(befehl)
+
+    def _lauf(self):
+        while True:
+            pfad = self._auftraege.get()
+            try:
+                while True:              # nur die neueste Ansage zählt
+                    pfad = self._auftraege.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                if self._offen:
+                    self._sende(f"close {self.ALIAS}")
+                    self._offen = False
+                if self._sende(f'open "{pfad}" type mpegvideo alias {self.ALIAS}') == 0:
+                    self._offen = True
+                    self._sende(f"play {self.ALIAS} from 0")
+            except Exception:
+                pass                     # winmm nicht verfügbar o. Ä.: still überspringen
+
+    def sage(self, cid, immer=False):
+        """True, wenn eine Ansage gestartet wurde."""
+        if not (self.an or immer):
+            return False
+        try:
+            pfad = self.clip(cid)
+            if not pfad or (self._mci is None and not hasattr(sys, "getwindowsversion")):
+                return False
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._lauf, daemon=True, name="JAI")
+                self._thread.start()
+            self._auftraege.put(pfad)
+            return True
+        except Exception:
+            return False
+
+
 # ------------------------------------------------------------------ Bilder
 def _gedreht(img):
     """EXIF-Drehung immer anwenden (sonst liegen Handyfotos nach dem Konvertieren schief)."""
@@ -3707,6 +3776,10 @@ class KreisApp:
         self.open_var = tk.BooleanVar(value=bool(cfg.get("open", True)))
         self.top_var = tk.BooleanVar(value=bool(cfg.get("top", True)))
         self.sound_var = tk.BooleanVar(value=bool(cfg.get("sound", True)))
+        self.jai = JAI()
+        self.jai_var = tk.BooleanVar(value=cfg.get("jai") is True)     # Standard: aus
+        self.jai.an = self.jai_var.get()
+        self._jai_ziel = ""
         self.exif_var = tk.BooleanVar(value=bool(cfg.get("exif", False)))
         self.watch_var = tk.BooleanVar(value=False)
         self.preset_web_var = tk.BooleanVar(value=bool(cfg.get("preset_web", False)))
@@ -3769,6 +3842,8 @@ class KreisApp:
         r.after(60, self._poll)
         r.after(20, self._tick)
         r.after(1000, self._watch_loop)
+        if self.jai.an:
+            r.after(600, lambda: self._ansage("willkommen"))
 
     def _tk_fehler(self, exc, val, tb):
         import traceback
@@ -4432,6 +4507,8 @@ class KreisApp:
         schalter("Immer im Vordergrund", self.top_var,
                  lambda: self.root.attributes("-topmost", self.top_var.get()))
         schalter("Audio-Feedback", self.sound_var)
+        schalter("JAI-Stimme", self.jai_var, self._jai_umschalten)
+        aktion("▶  JAI testen", self._jai_testen)
         schalter("EXIF-Daten entfernen", self.exif_var)
         schalter("Web-Preset (1200 px, ohne EXIF)", self.preset_web_var, self.zeichne_texte)
         if self.watch_var.get():
@@ -4459,6 +4536,43 @@ class KreisApp:
         top.bind("<FocusOut>", lambda e: e.widget == top and schliessen())
         top.bind("<Escape>", lambda e: schliessen())
         top.focus_set()
+
+    # ---- JAI
+    def _ansage(self, cid):
+        """Höchstens eine Ansage pro Ereignis; True, wenn JAI spricht (dann kein Piepton)."""
+        try:
+            return self.jai.sage(cid)
+        except Exception:
+            return False
+
+    def _jai_umschalten(self):
+        self.jai.an = self.jai_var.get()
+        if self.jai.an:
+            self._ansage("jai_aktiviert")
+        self._speichern()
+
+    def _jai_testen(self):
+        try:
+            self.jai.sage("jai_aktiviert", immer=True)
+        except Exception:
+            pass
+
+    def _jai_ergebnis(self, ok, fehler, fehltext):
+        """Clip-ID für das Ende einer Umwandlung."""
+        text = (fehltext or "").lower()
+        if fehler and "abgebrochen" in text:
+            return "abgebrochen"
+        if fehler:
+            if "passwort" in text:
+                return "passwort_erforderlich"
+            if "nicht unterstützt" in text or "kein passendes" in text or "keine passenden" in text:
+                return "format_nicht_unterstuetzt"
+            return "fehler"
+        if ok and self._jai_ziel in PACK_AKTIONEN:
+            return "archiv_erstellt"
+        if ok > 1:
+            return "alle_fertig"
+        return "fertig" if ok else None
 
     def _fokus(self):
         try:
@@ -4781,6 +4895,7 @@ class KreisApp:
                 return
             self.ergebnis = (0, 1, "Keine passenden Dateien")
             self._zeige_fertig()
+            self._ansage("format_nicht_unterstuetzt")
             return
 
         self.zustand = "laeuft"
@@ -4789,6 +4904,8 @@ class KreisApp:
         self.erparnis_text = ""
         self.abbruch = threading.Event()
         self.zeichne_texte()
+        self._jai_ziel = ziel_ext
+        self._ansage("datei_erkannt" if len(dateien) == 1 else "konvertierung_laeuft")
         args = (dateien, ziel_ext, self.ordner, self.qual.get(), strip_exif, self.abbruch)
         threading.Thread(target=self._arbeit, args=args, daemon=True).start()
 
@@ -4816,7 +4933,7 @@ class KreisApp:
             self._toggle_mini()              # die Auswahl braucht den großen Kreis
         self.hover = False
         self.zustand = "wahl"
-        if self.sound_var.get():
+        if not self._ansage("format_waehlen") and self.sound_var.get():
             spiele_sound("drop")
         self.zeichne_texte()
         self._fokus()
@@ -4853,6 +4970,7 @@ class KreisApp:
         self.wahl_queue.clear()
         self._wahl_ende()
         self.zeichne_texte()
+        self._ansage("abgebrochen")
         if self.wartend:
             pfade, self.wartend = self.wartend, []
             self.starten(pfade)
@@ -5120,7 +5238,8 @@ class KreisApp:
         self.warnungen = list(warnungen or [])
         del self.historie[:-200]
         self._zeige_fertig()
-        if self.sound_var.get():
+        cid = self._jai_ergebnis(ok, fehler, fehltext)
+        if not (cid and self._ansage(cid)) and self.sound_var.get():
             spiele_sound("ok" if ok else "err")
         if ok and self.open_var.get() and ordner and not self.wartend and hasattr(os, "startfile"):
             try:
@@ -5184,7 +5303,7 @@ class KreisApp:
                 "tray_min": self.tray_min_var.get(), "ordner": self.ordner, "format": self.format,
                 "watch_ordner": self.watch_ordner, "office_bevorzugen": OFFICE_BEVORZUGEN[0],
                 "fenster": {"x": self._pos[0] + self.size // 2, "y": self._pos[1] + self.size // 2},
-                "mini": self.mini_mode,
+                "mini": self.mini_mode, "jai": self.jai_var.get(),
             })
             speichere_einstellungen(d)
         except Exception:

@@ -60,8 +60,19 @@ Im Modus FORMAT WÄHLEN: Pfeile = Format, Enter = Start, Esc = Abbrechen
 DAS MENÜ
 --------
 Zielordner wählen/zurücksetzen, Farbdesign, Qualität (100/92/85/75 %), Ordner danach öffnen,
-immer im Vordergrund, Töne, EXIF-Daten (z. B. Aufnahmeort) aus Fotos entfernen, Web-Voreinstellung,
+immer im Vordergrund, Töne, JAI-Stimme an/aus und "JAI testen", EXIF-Daten (z. B. Aufnahmeort) aus Fotos entfernen, Web-Voreinstellung,
 Ordner überwachen (neue Dateien dort werden automatisch umgewandelt), Protokoll, Lizenzen, Beenden.
+
+
+
+JAI-STIMME
+----------
+Auf Wunsch sagt JAI kurze Meldungen an, z. B. "Datei erkannt", "Fertig", "Alle Dateien fertig",
+"Bitte Format wählen", "Abgebrochen" oder "Das hat nicht geklappt". Einschalten im Menü unter
+"JAI-Stimme" (Standard: aus), ausprobieren mit "JAI testen". Die Einstellung wird gemerkt.
+Die Stimme ist eine eigene Erzeugung von Joschy mit ElevenLabs. Die Clips liegen im Ordner "jai"
+und stehen, sofern nicht anders vermerkt, unter derselben Lizenz AGPL-3.0 wie das Programm.
+Fehlt der Ordner, läuft das Programm normal, nur ohne Ansagen.
 
 
 STARTEN UND BAUEN

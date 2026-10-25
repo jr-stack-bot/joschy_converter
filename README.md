@@ -21,6 +21,16 @@ Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Die fert
 Passt eine Datei nicht zum eingestellten Format, zeigt der Kreis „FORMAT WÄHLEN“ und bietet nur die
 passenden Formate an. Bedienung mit Maus und Tastatur: siehe [LIESMICH.txt](LIESMICH.txt).
 
+## JAI-Stimme
+
+Optional sagt der Sprachassistent JAI kurze Meldungen an („Datei erkannt“, „Fertig“, „Bitte Format wählen“ …).
+Einschalten im Menü über „JAI-Stimme“ (Standard: aus), ausprobieren mit „JAI testen“. Die Einstellung wird
+in `einstellungen.json` gespeichert. Die Wiedergabe nutzt Windows selbst, es ist kein Zusatzpaket nötig.
+
+Die Stimme ist eine eigene Erzeugung von Joschy mit ElevenLabs. Die Clips liegen im Ordner [`jai/`](jai/)
+im Repository und stehen, sofern nicht anders vermerkt, unter derselben Lizenz AGPL-3.0 wie das Programm.
+Fehlt der Ordner, läuft das Programm ganz normal, nur ohne Ansagen.
+
 ## Starten und bauen
 
 - **Ohne exe:** `start.bat` doppelklicken (Python 3 muss installiert sein, Pakete aus `requirements.txt`).
