@@ -13,6 +13,7 @@ from PyInstaller.utils.hooks import collect_all
 BASIS = os.path.abspath(SPECPATH)
 datas, binaries = [], []
 hiddenimports = [
+    'hud_grafik',                                              # HUD-Grafik des Kreises (eigenes Modul)
     'PIL._tkinter_finder', 'PIL.ImageTk', 'PIL.ImageDraw', 'PIL.ImageFilter', 'PIL.ImageChops',   # sonst bleibt die Oberfläche leer
     'win32com.client', 'pythoncom', 'pywintypes',            # Office (optional, nur wenn Office vorhanden ist)
     'openpyxl', 'pdfplumber', 'pdfminer', 'pypdfium2', 'pypdfium2_raw', 'pypdf', 'qrcode', 'xlrd', 'olefile', 'striprtf', 'striprtf.striprtf',
