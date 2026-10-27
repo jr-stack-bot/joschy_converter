@@ -3263,8 +3263,7 @@ class KreisApp:
         self.top_var = tk.BooleanVar(value=bool(cfg.get("top", True)))
         self.sound_var = tk.BooleanVar(value=bool(cfg.get("sound", True)))
         self.jai = JAI()
-        self.jai_var = tk.BooleanVar(value=cfg.get("jai") is True)     # Standard: aus
-        self.jai.an = self.jai_var.get()
+        self._jai_einrichten(cfg)
         self._jai_ziel = ""
         self.exif_var = tk.BooleanVar(value=bool(cfg.get("exif", False)))
         self.effekte = self._effekte_aus_cfg(cfg)
@@ -4104,6 +4103,7 @@ class KreisApp:
                  lambda: self.root.attributes("-topmost", self.top_var.get()))
         schalter("Audio-Feedback", self.sound_var)
         schalter("JAI-Stimme", self.jai_var, self._jai_umschalten)
+        schalter("Ausführliche Ansagen", self.jai_ausf_var, self._jai_ausf_umschalten)
         aktion("▶  JAI testen", self._jai_testen)
         schalter("EXIF-Daten entfernen", self.exif_var)
         schalter("Web-Preset (1200 px, ohne EXIF)", self.preset_web_var, self.zeichne_texte)
@@ -4151,17 +4151,58 @@ class KreisApp:
                     break
 
     # ---- JAI
-    def _ansage(self, cid):
-        """Höchstens eine Ansage pro Ereignis; True, wenn JAI spricht (dann kein Piepton)."""
+    ANSAGE_PAUSE = 1.5      # s: ausführliche Ansagen werden verworfen, wenn kurz vorher eine begann
+
+    def _jai_einrichten(self, cfg):
+        """JAI und „Ausführliche Ansagen“ aus den Einstellungen; beides nur bei echtem True an."""
+        self.jai_var = tk.BooleanVar(value=cfg.get("jai") is True)                  # Standard: aus
+        self.jai_ausf_var = tk.BooleanVar(value=cfg.get("jai_ausfuehrlich") is True)  # Standard: aus
+        self.jai.an = self.jai_var.get()
+        self.jai.ausfuehrlich = self.jai_ausf_var.get()
+        self._ansage_t = float("-inf")
+        self._jai_after = None
+
+    def _ansage(self, teile, ausfuehrlich=False):
+        """Höchstens eine Ansage pro Ereignis; True, wenn JAI spricht (dann kein Piepton).
+        ausfuehrlich=True: nur mit „Ausführliche Ansagen“ und nicht innerhalb von ANSAGE_PAUSE
+        nach der letzten Ansage (sonst verworfen). Basis-Ansagen werden nie verworfen."""
         try:
-            return self.jai.sage(cid)
+            if ausfuehrlich:
+                if not (self.jai.an and self.jai.ausfuehrlich):
+                    return False
+                if time.monotonic() - self._ansage_t < self.ANSAGE_PAUSE:
+                    return False
+            ok = self.jai.sage(teile)
+            if ok:
+                self._ansage_t = time.monotonic()
+            return ok
         except Exception:
             return False
+
+    def _jai_spaeter(self, teile, ms):
+        """Entprellt: bricht die ausstehende Ansage ab und plant (falls teile) eine neue in ms ein."""
+        if self._jai_after is not None:
+            try:
+                self.root.after_cancel(self._jai_after)
+            except Exception:
+                pass
+            self._jai_after = None
+        if teile:
+            def los():
+                self._jai_after = None
+                self._ansage(teile, ausfuehrlich=True)
+            self._jai_after = self.root.after(ms, los)
 
     def _jai_umschalten(self):
         self.jai.an = self.jai_var.get()
         if self.jai.an:
             self._ansage("jai_aktiviert")
+        self._speichern()
+
+    def _jai_ausf_umschalten(self):
+        self.jai.ausfuehrlich = self.jai_ausf_var.get()
+        if self.jai.ausfuehrlich:
+            self._ansage("ausfuehrlich_an", ausfuehrlich=True)
         self._speichern()
 
     def _jai_testen(self):
@@ -4170,22 +4211,90 @@ class KreisApp:
         except Exception:
             pass
 
-    def _jai_ergebnis(self, ok, fehler, fehltext):
-        """Clip-ID für das Ende einer Umwandlung."""
+    @staticmethod
+    def slug(text):
+        """Teil einer Clip-ID: pdf (komp) -> pdf_komp, E-Book -> e_book."""
+        s = str(text).lower()
+        for a, b in (("ü", "ue"), ("ä", "ae"), ("ö", "oe"), ("ß", "ss")):
+            s = s.replace(a, b)
+        s = re.sub(r"[%()]", "", s)
+        s = re.sub(r"[\s\-]", "_", s)
+        return re.sub(r"_+", "_", s).strip("_")
+
+    @staticmethod
+    def zahl_teile(n):
+        """Zahl als Clip-Folge: 1…20 exakt, glatte Zehner bis 100 exakt, sonst „Über“ + Zehner."""
+        if n < 1:
+            return ()
+        if n <= 20 or (n <= 100 and n % 10 == 0):
+            return (f"z_{n}",)
+        if n <= 100:
+            return ("ueber", f"z_{n // 10 * 10}")
+        return ("ueber", "z_100")
+
+    @staticmethod
+    def clip_fuer_format(fmt):
+        """ziel_<slug> für eingebaute Formate; None für Erweiterungen und Unbekanntes."""
+        if fmt in ERW_FORMATE or fmt not in ALLE_FORMATE:
+            return None
+        return "ziel_" + KreisApp.slug(fmt)
+
+    @staticmethod
+    def clip_fuer_kat(kat):
+        """kat_<slug> für eingebaute Kategorien; None, wenn unbekannt oder nur Erweiterungsformate."""
+        formate = KATEGORIEN.get(kat)
+        if not formate or all(f in ERW_FORMATE for f in formate):
+            return None
+        return "kat_" + KreisApp.slug(kat)
+
+    @staticmethod
+    def jai_ende(ok, fehler, fehltext, ziel, warnungen, ausf):
+        """Clip-Folge für das Ende einer Umwandlung (Spec C3 „Ende“), None ohne Ergebnis."""
         text = (fehltext or "").lower()
         if fehler and "abgebrochen" in text:
-            return "abgebrochen"
+            return ("abgebrochen",)
         if fehler:
-            if "passwort" in text:
-                return "passwort_erforderlich"
-            if "nicht unterstützt" in text or "kein passendes" in text or "keine passenden" in text:
-                return "format_nicht_unterstuetzt"
-            return "fehler"
-        if ok and self._jai_ziel in PACK_AKTIONEN:
-            return "archiv_erstellt"
+            ursachen = (
+                (("passwort",), "passwort_erforderlich"),
+                (("nicht unterstützt", "kein passendes", "keine passenden"), "format_nicht_unterstuetzt"),
+                (("zu groß", "arbeitsspeicher"), "datei_zu_gross"),
+                (("kein zugriff",), "datei_gesperrt"),
+                (("datenträger ist voll",), "speicher_voll"),
+                (("nicht gefunden",), "datei_nicht_gefunden"),
+                (("beschädigt",), "datei_beschaedigt"),
+            )
+            for muster, cid in ursachen:
+                if any(m in text for m in muster):
+                    return (cid,)
+            if ausf and ok > 0:
+                if fehler == 1:
+                    return ("eine_datei_fehlgeschlagen",)
+                return KreisApp.zahl_teile(fehler) + ("dateien_fehlgeschlagen",)
+            return ("fehler",)
+        if ok < 1:
+            return None
+        if warnungen:
+            return ("fertig_pruefen",)
+        if ziel == "entpacken":
+            return ("archiv_entpackt",)
+        if ziel in PACK_AKTIONEN:
+            return ("archiv_erstellt",)
         if ok > 1:
-            return "alle_fertig"
-        return "fertig" if ok else None
+            return KreisApp.zahl_teile(ok) + ("dateien_fertig",) if ausf else ("alle_fertig",)
+        return ("fertig",)
+
+    @staticmethod
+    def begruessung(stunde, ausf):
+        """Clip für den Programmstart; ausführlich je nach Uhrzeit."""
+        if not ausf:
+            return "willkommen"
+        if 5 <= stunde <= 10:
+            return "guten_morgen"
+        if 11 <= stunde <= 16:
+            return "guten_tag"
+        if 17 <= stunde <= 21:
+            return "guten_abend"
+        return "spaete_stunde"
 
     def _fokus(self):
         try:
@@ -4857,8 +4966,9 @@ class KreisApp:
         self.warnungen = list(warnungen or [])
         del self.historie[:-200]
         self._zeige_fertig()
-        cid = self._jai_ergebnis(ok, fehler, fehltext)
-        if not (cid and self._ansage(cid)) and self.sound_var.get():
+        teile = self.jai_ende(ok, fehler, fehltext, self._jai_ziel, self.warnungen,
+                              self.jai.ausfuehrlich)
+        if not (teile and self._ansage(teile)) and self.sound_var.get():
             spiele_sound("ok" if ok else "err")
         if ok and self.open_var.get() and ordner and not self.wartend and hasattr(os, "startfile"):
             try:
@@ -4923,6 +5033,7 @@ class KreisApp:
                 "watch_ordner": self.watch_ordner, "office_bevorzugen": OFFICE_BEVORZUGEN[0],
                 "fenster": {"x": self._pos[0] + self.size // 2, "y": self._pos[1] + self.size // 2},
                 "mini": self.mini_mode, "jai": self.jai_var.get(), "effekte": self.effekte,
+                "jai_ausfuehrlich": self.jai_ausf_var.get(),
             })
             speichere_einstellungen(d)
         except Exception:
