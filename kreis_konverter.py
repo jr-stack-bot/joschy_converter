@@ -3249,6 +3249,10 @@ class KreisApp:
         self.historie = []
         self.w_ticks = self.w_radar = self.w_hex = 0.0
         self.w_ringe = [0.0, 0.0, 0.0]          # Zierringe A, B, C (hud_grafik.RINGE)
+        self.partikel = hg.Partikel(random.Random())
+        self._ueb = None                        # laufender Übergang: (alt_key, alt_basis, t_start, v_alt)
+        self._letzter_key = self._letzte_basis = None
+        self._v_letzt = None                    # zuletzt benutzte Tempi (v_t, v_r, Ringfaktor)
         self.t0 = self.t_letzt = self.t_fertig = time.time()
         self.funken = []
         self._press = None
@@ -3409,21 +3413,50 @@ class KreisApp:
         else:
             v_t, v_r = {"bereit": (10, 38), "laeuft": (60, 150), "fertig": (25, 60), "wahl": (22, 95)}[self.zustand]
             self.welle_radius = 40.0
+        stufe = self.effekte
+        if self.mini_mode and stufe == "voll":
+            stufe = "sparsam"                       # Mini-Modus: höchstens "sparsam"
+        faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
+
+        key = self._schluessel()
+        anzeige = self._anzeige_format()
+        kat = kat_von_format(anzeige)
+        basis = hg._basis_id(self.zustand, kat)
+        alt_key = alt_basis = None
+        ueb = 1.0
+        if stufe == "aus":
+            self._ueb = None
+        else:
+            if self._letzter_key is not None and key != self._letzter_key:
+                self._ueb = (self._letzter_key, self._letzte_basis, jetzt, self._v_letzt or (v_t, v_r, faktor))
+            if self._ueb is not None:
+                anteil = (jetzt - self._ueb[2]) / hg.UEBERGANG_S
+                if anteil >= 1.0:
+                    self._ueb = None
+                else:
+                    anteil = max(0.0, anteil)
+                    alt_key, alt_basis = self._ueb[0], self._ueb[1]
+                    ueb = hg.ease(anteil)
+                    va = self._ueb[3]               # Tempi linear mit dem ungeglätteten Anteil
+                    v_t, v_r, faktor = (a + (b - a) * anteil for a, b in zip(va, (v_t, v_r, faktor)))
+        self._letzter_key, self._letzte_basis, self._v_letzt = key, basis, (v_t, v_r, faktor)
 
         self.w_ticks = (self.w_ticks + v_t * dt) % 360
         self.w_radar = (self.w_radar + v_r * dt) % 360
         self.w_hex = (self.w_hex + 22 * dt) % 360
         self.prog_anzeige += (self.fortschritt - self.prog_anzeige) * min(1.0, dt * 8)
-        stufe = self.effekte
-        if self.mini_mode and stufe == "voll":
-            stufe = "sparsam"                       # Mini-Modus: höchstens "sparsam"
-        faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
         for i, name in enumerate("ABC"):
             self.w_ringe[i] = (self.w_ringe[i] + hg.RINGE[name][5] * faktor * dt) % 360
 
-        key = self._schluessel()
-        anzeige = self._anzeige_format()
-        kat = kat_von_format(anzeige)
+        if stufe == "aus":
+            if self.partikel.liste():
+                self.partikel = hg.Partikel(self.partikel.rng)      # "aus": keine Teilchen behalten
+            partikel = ()
+        else:
+            # Partikel nur bei "voll" ohne Mini; sonst laufen vorhandene aus (gezeichnet werden sie dann nicht)
+            max_n = 0 if (stufe != "voll" or self.mini_mode) else (40 if self.zustand == "laeuft" else 12)
+            self.partikel.schritt(dt, max_n)
+            partikel = self.partikel.liste() if max_n else ()
         try:
             formate = self.wahl["formate"] if (self.zustand == "wahl" and self.wahl) else sichtbare_formate()
             bogen_i, bogen_n = formate.index(anzeige), len(formate)
@@ -3434,7 +3467,8 @@ class KreisApp:
                       w_ticks=self.w_ticks, w_radar=self.w_radar, w_hex=self.w_hex,
                       welle_radius=self.welle_radius, prog=self.prog_anzeige,
                       t_fertig=jetzt - self.t_fertig, t_lauf=jetzt - self.t0,
-                      stufe=stufe, w_ringe=tuple(self.w_ringe))
+                      stufe=stufe, w_ringe=tuple(self.w_ringe), partikel=partikel,
+                      alt_key=alt_key, alt_basis=alt_basis, ueb=ueb)
         out_img = hg.zeichne(self.g, d)
 
         if self.photo is None or self.photo.width() != out_img.width:
@@ -3455,6 +3489,8 @@ class KreisApp:
     def _tick_pause(self):
         """Millisekunden bis zum nächsten Bild: während der Arbeit flüssig (30 fps), im Leerlauf 12 fps,
         im Mini-Modus sparsam."""
+        if self._ueb is not None:
+            return 33                               # weicher Übergang (300 ms) flüssig zeichnen
         if self.mini_mode:
             return 33 if (self.zustand == "laeuft" or self.hover) else 125
         return 33 if (self.hover or self.zustand != "bereit") else 83

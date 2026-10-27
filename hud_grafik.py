@@ -8,6 +8,7 @@ SKALA und SS ändern sich zur Laufzeit (setze_skalierung) - von außen immer als
 from __future__ import annotations
 
 import math
+import random
 import threading
 from dataclasses import dataclass
 
@@ -178,6 +179,52 @@ RINGE = {"A": (136, 2.0, 110, 15.0, 24, +18.0),     # 24 Bögen à 9°
 RING_SCHRITT = 0.625
 GLOW_SPARSAM = 10          # feste Glow-Stufe bei "sparsam"
 
+# Partikel (B3): Sprite-Atlas mit 4 Größen (logische px) x 4 Helligkeiten (Alpha)
+PARTIKEL_GROESSEN = (3, 5, 8, 12)
+PARTIKEL_ALPHA = (64, 128, 192, 255)
+UEBERGANG_S = 0.3          # Dauer eines weichen Zustandsübergangs
+
+
+def ease(t):
+    """Smoothstep (ease-in-out), auf [0, 1] begrenzt."""
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+class Partikel:
+    """Teilchen, die auf r = 60…150 um die Mitte kreisen (logische px), mit Ein- und Ausblenden."""
+
+    def __init__(self, rng=None):
+        self.rng = rng or random.Random()
+        self._teile = []            # [winkel_grad, r, omega_grad_s, alter, leben, groesse_i]
+
+    def schritt(self, dt, max_n):
+        rest = []
+        for p in self._teile:
+            p[3] += dt
+            if p[3] < p[4]:
+                p[0] = (p[0] + p[2] * dt) % 360
+                rest.append(p)
+        self._teile = rest
+        if len(rest) < max_n:                     # höchstens ein neues Teilchen je Schritt
+            rng = self.rng
+            omega = rng.uniform(4.0, 15.0) * rng.choice((-1, 1))
+            rest.append([rng.uniform(0, 360), rng.uniform(60.0, 150.0), omega, 0.0,
+                         rng.uniform(2.0, 5.0), rng.randrange(4)])
+
+    @staticmethod
+    def _hell(alter, leben):
+        f = alter / leben
+        h = 3.0 * min(1.0, f / 0.25, (1.0 - f) / 0.25)
+        return max(0, min(3, int(round(h))))
+
+    def liste(self):
+        aus = []
+        for w, r, _, alter, leben, gi in self._teile:
+            a = math.radians(w)
+            aus.append((170 + r * math.cos(a), 170 + r * math.sin(a), gi, self._hell(alter, leben)))
+        return tuple(aus)
+
 
 def theme_daten(name):
     return THEMES.get(name, THEMES[STANDARD_THEME])
@@ -217,6 +264,8 @@ class Grafik:
         self._ringe_lock = threading.Lock()
         self._ringe_gen = 0         # erhöht bei jeder Freigabe; ein veralteter Bau-Thread verwirft sein Ergebnis
         self._b3_farbe = None       # (farbe, box, Ausschnitt) - Cache für den zugeschnittenen Farbverlauf
+        self._atlas = None          # Partikel-Atlas, erst beim ersten Partikel gebaut (bei "aus" nie)
+        self._atlas_boxen = None
         self.rebuild_theme(akt_theme)
 
     @staticmethod
@@ -239,6 +288,42 @@ class Grafik:
         self.plain = verkleinere(self.core_ss)
         self.idle = _Lazy(lambda k: verkleinere(self._pille(k)))
         self._bogen_cache.clear()
+        if self._atlas is not None:                   # Partikel in der neuen Designfarbe
+            self._atlas_bauen()
+
+    @property
+    def atlas(self):
+        """Sprite-Atlas (RGBA) der Partikel: Spalten = Größen, Zeilen = Helligkeiten."""
+        if self._atlas is None:
+            self._atlas_bauen()
+        return self._atlas
+
+    def atlas_box(self, groesse_i, hell_i):
+        if self._atlas_boxen is None:
+            self._atlas_bauen()
+        return self._atlas_boxen[groesse_i][hell_i]
+
+    def _atlas_bauen(self):
+        farbe = hexrgb(theme_daten(self.akt_theme)["CYAN"])
+        seiten = [max(2, P(s)) for s in PARTIKEL_GROESSEN]
+        breite, hoehe = sum(seiten) + len(seiten) - 1, sum([seiten[-1]] * 4) + 3
+        alpha = Image.new("L", (breite, hoehe), 0)
+        boxen = [[None] * 4 for _ in seiten]
+        x = 0
+        for gi, w in enumerate(seiten):
+            k = 8                                       # weicher Punkt: überabgetastet, geblurt, verkleinert
+            m = Image.new("L", (w * k, w * k), 0)
+            ImageDraw.Draw(m).ellipse([w * k * 0.22, w * k * 0.22, w * k * 0.78, w * k * 0.78], fill=255)
+            m = m.filter(ImageFilter.GaussianBlur(w * k * 0.12)).resize((w, w), Image.LANCZOS)
+            hoch = m.getextrema()[1] or 1
+            for hi, a in enumerate(PARTIKEL_ALPHA):
+                y = hi * (seiten[-1] + 1)
+                alpha.paste(m.point(lambda v, f=a / hoch: min(255, int(v * f + 0.5))), (x, y))
+                boxen[gi][hi] = (x, y, x + w, y + w)
+            x += w + 1
+        atlas = Image.new("RGBA", (breite, hoehe), farbe + (0,))
+        atlas.putalpha(alpha)
+        self._atlas, self._atlas_boxen = atlas, boxen
 
     @staticmethod
     def _farbe_fuer(key, td):
@@ -359,12 +444,17 @@ class Grafik:
             self.b3_box = None
             self._ringe_thread = None
             self._b3_farbe = None
+            self._atlas = None
+            self._atlas_boxen = None
 
     def ringe_bytes(self):
-        """Speicher aller B3-Daten (Ringe, Glow-Masken, Farb-Ausschnitt) in Bytes."""
+        """Speicher aller B3-Daten in Bytes: Ringe, Glow-Masken, Farb-Ausschnitt und Partikel-Atlas.
+        Übergänge halten nichts dauerhaft (Mischbilder leben nur während eines Bildes)."""
         bilder = [b for folge in (self.ringe or {}).values() for b in folge] + list((self.glow or {}).values())
         if self._b3_farbe is not None:
             bilder.append(self._b3_farbe[2])
+        if self._atlas is not None:
+            bilder.append(self._atlas)
         return sum(b.width * b.height * len(b.getbands()) for b in bilder)
 
     def ring_maske(self, name, winkel):
@@ -757,12 +847,36 @@ class BildDaten:
     t_lauf: float           # Sekunden seit Programmstart (jetzt - t0)
     stufe: str = "aus"      # Effekt-Stufe: "voll" | "sparsam" | "aus"
     w_ringe: tuple[float, float, float] = (0.0, 0.0, 0.0)   # Winkel der Zierringe A, B, C
+    partikel: tuple = ()                # ((x_log, y_log, groesse_i, hell_i), ...)
+    alt_key: str | None = None          # Übergang: vorheriger key ...
+    alt_basis: str | None = None        # ... und vorheriges Grundbild (Kategorie oder "plain")
+    ueb: float = 1.0                    # Anteil des neuen Bildes (geglättet), 1 = kein Übergang
+
+
+def _basis_id(zustand, kat):
+    return kat if zustand in ("bereit", "wahl") else "plain"
+
+
+def _basis_bild(g, basis):
+    return g.plain if basis == "plain" else g.idle[basis]
 
 
 def zeichne(g, d):
     """Ein Bild des Kreises (RGB, inklusive Kreismaske bzw. Mini-Skalierung)."""
     farbe = g.conic[d.key]
-    rahmen = (g.idle[d.kat] if d.zustand in ("bereit", "wahl") else g.plain).copy()
+    basis = _basis_id(d.zustand, d.kat)
+    gemischt = False
+    if d.stufe != "aus" and d.alt_key is not None and d.ueb < 1.0:
+        # weicher Übergang: Farbe (und ggf. Grundbild) aus altem und neuem Zustand mischen
+        if d.alt_key != d.key:
+            farbe = Image.blend(g.conic[d.alt_key], farbe, d.ueb)
+            gemischt = True
+        if d.alt_basis is not None and d.alt_basis != basis:
+            rahmen = Image.blend(_basis_bild(g, d.alt_basis), _basis_bild(g, basis), d.ueb)
+        else:
+            rahmen = _basis_bild(g, basis).copy()
+    else:
+        rahmen = _basis_bild(g, basis).copy()
 
     puls_faktor = 5.2 if d.zustand == "laeuft" else 2.6
     puls = 0.65 + 0.35 * math.sin(d.t_lauf * puls_faktor)
@@ -778,7 +892,14 @@ def zeichne(g, d):
         for i in range(1, len(namen)):
             maske = ImageChops.lighter(maske, g.ring_maske(namen[i], d.w_ringe[i]))
         maske = ImageChops.screen(maske, g.glow_kombi(namen, g.glow_index(puls) if d.stufe == "voll" else GLOW_SPARSAM))
-        rahmen.paste(g.farbe_b3(farbe), g.b3_box[:2], maske)
+        # Während eines Übergangs ist farbe jedes Bild neu: nur zuschneiden, nicht cachen (hält keinen Speicher)
+        rahmen.paste(farbe.crop(g.b3_box) if gemischt else g.farbe_b3(farbe), g.b3_box[:2], maske)
+    if d.stufe == "voll" and not d.mini and d.partikel:
+        atlas = g.atlas
+        for x, y, gi, hi in d.partikel:
+            box = g.atlas_box(gi, hi)
+            w, h = box[2] - box[0], box[3] - box[1]
+            rahmen.alpha_composite(atlas, dest=(P(x) - w // 2, P(y) - h // 2), source=box)
     rahmen.paste(farbe, (0, 0), g.radar_maske(d.w_radar))
 
     if d.hover:
