@@ -380,8 +380,7 @@ class Grafik:
         self.farben = {k: self._farbe_fuer(k, td) for k in FARBEN}
         self.conic = {k: self._conic(k) for k in FARBEN}
         self.emb = _Lazy(lambda k: self._emblem(k, EMB_GLYPH.get(k, "pfeil")))
-        self._hex_cache.clear()
-        self.kopf = self._kopf()
+        self.kopf = self._kopf()            # _hex_cache bleibt: die Sechseck-Masken sind farblos
         self.core_ss = self._core(theme_name)
         self.plain = verkleinere(self.core_ss)
         self.idle = _Lazy(lambda k: verkleinere(self._pille(k)))
@@ -517,6 +516,9 @@ class Grafik:
                     raise ValueError(f"Ring {name} ragt über den Glow-Ausschnitt hinaus")
                 folge.append(m.crop(box))
             ringe[name] = folge
+        # Caches füllen, bevor die Ringe erscheinen: das Zeitbudget wärmt mit den Ringen neu auf und misst
+        # danach nur noch Bilder ohne Cache-Fehlgriffe (siehe vorwaermen).
+        self.vorwaermen(lambda: gen != self._ringe_gen)
         with self._ringe_lock:
             if gen != self._ringe_gen:                          # inzwischen freigegeben: verwerfen
                 return
@@ -855,17 +857,56 @@ class Grafik:
         return self.halo_stufen[max(0, min(15, i))]
 
     def hex_masken(self, key, w_hex):
-        """Gedrehte Sechseck-Masken in 3°-Schritten (gecacht statt pro Frame neu gedreht)."""
-        emb = self.emb[key]
+        """Gedrehte Sechseck-Masken in 3°-Schritten (gecacht statt pro Frame neu gedreht).
+        hex_a/hex_b sind für alle keys und Themes gleich (farblos): ein gemeinsamer Cache für alle."""
         ka = int((w_hex % 360) // 3) % 120
         kb = int(((w_hex * 1.6) % 360) // 3) % 120
-        ma = self._hex_cache.get((key, "a", ka))
+        ma = self._hex_cache.get(("a", ka))
         if ma is None:
-            ma = self._hex_cache[(key, "a", ka)] = verkleinere(emb["hex_a"].rotate(-ka * 3, resample=Image.BILINEAR))
-        mb = self._hex_cache.get((key, "b", kb))
+            ma = self._hex_cache[("a", ka)] = self._hex_drehen(self.emb[key]["hex_a"], -ka * 3)
+        mb = self._hex_cache.get(("b", kb))
         if mb is None:
-            mb = self._hex_cache[(key, "b", kb)] = verkleinere(emb["hex_b"].rotate(kb * 3, resample=Image.BILINEAR))
+            mb = self._hex_cache[("b", kb)] = self._hex_drehen(self.emb[key]["hex_b"], kb * 3)
         return ma, mb
+
+    @staticmethod
+    def _hex_drehen(maske, grad):
+        return verkleinere(maske.rotate(grad, resample=Image.BILINEAR))
+
+    def _radar_drehen(self, k):
+        return verkleinere(self.radar.rotate(k * 3, resample=Image.BILINEAR))
+
+    def vorwaermen(self, abbruch=None):
+        """Nur bei 100 %: Radar-, Sechseck- und Hover-Wellen-Cache vollständig füllen (im Ringe-Thread).
+
+        Ohne das füllen sich diese Caches erst in den ersten 10-16 s, und jedes fehlende Bild kostet
+        1,5-5,6 ms (Drehen/Weichzeichnen in Überabtastung). Genau in diese Zeit fallen die Messfenster
+        des Zeitbudgets (B5) nach dem Ringe-Bau: "voll" wurde dadurch zu teuer gemessen. Die Bilder sind
+        dieselben, die zeichne() sonst selbst erzeugt hätte (bitgleich); Speicher wie nach 16 s Laufzeit.
+        Bei höherer Skalierung (keine Radar-Bildfolge, B3-Speichergrenze) passiert nichts.
+        abbruch(): True -> sofort aufhören (Ringe inzwischen freigegeben)."""
+        if SKALA != 1.0:
+            return
+        abbruch = abbruch or (lambda: False)
+        embs = list(self.emb.values())
+        if embs:
+            hex_a, hex_b = embs[0]["hex_a"], embs[0]["hex_b"]
+        else:
+            probe = self._emblem("Bild", "pfeil")
+            hex_a, hex_b = probe["hex_a"], probe["hex_b"]
+        for k in range(120):
+            if abbruch():
+                return
+            if k not in self._radar_cache:
+                self._radar_cache[k] = self._radar_drehen(k)
+            if ("a", k) not in self._hex_cache:
+                self._hex_cache[("a", k)] = self._hex_drehen(hex_a, -k * 3)
+            if ("b", k) not in self._hex_cache:
+                self._hex_cache[("b", k)] = self._hex_drehen(hex_b, k * 3)
+        for schluessel in range(20, 76):          # hover_welle: radius 40…150 -> radius // 2
+            if abbruch():
+                return
+            self.hover_welle(schluessel * 2)
 
     def fortschritt(self, frac):
         schluessel = int(min(frac, 0.9999) * 240)
@@ -892,7 +933,7 @@ class Grafik:
             return self._radar_klein.rotate(k * 3, resample=Image.BILINEAR)
         m = self._radar_cache.get(k)
         if m is None:
-            m = self._radar_cache[k] = verkleinere(self.radar.rotate(k * 3, resample=Image.BILINEAR))
+            m = self._radar_cache[k] = self._radar_drehen(k)
         return m
 
     def kategorien_bogen(self, index, gesamt):
