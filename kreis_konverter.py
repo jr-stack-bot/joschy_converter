@@ -4425,6 +4425,9 @@ class KreisApp:
             zu()
             if text and self.zustand != "laeuft":
                 self.zustand = "laeuft"
+                self._jai_ziel = "qrcode"        # sonst gilt noch das Ziel des letzten Auftrags (z. B. entpacken)
+                self._auftrag_n, self._halbzeit_gesagt, self._etwas_umgewandelt = 1, False, True
+                self._jai_spaeter(None, 0)
                 self.fortschritt = self.prog_anzeige = 0.0
                 self.info = ("1 / 1", "QR-Code erstellen...", "0 %")
                 self.zeichne_texte()
@@ -4743,6 +4746,7 @@ class KreisApp:
         self.wahl_queue.clear()
         self._wahl_ende()
         self.zeichne_texte()
+        self._jai_spaeter(None, 0)               # ausstehende Format-Ansage ist überholt
         self._ansage("abgebrochen")
         if self.wartend:
             pfade, self.wartend = self.wartend, []
