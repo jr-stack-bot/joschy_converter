@@ -3146,6 +3146,14 @@ lade_erweiterungen()            # optional – ohne Zusatzmodul ändert sich nic
 
 
 class KreisApp:
+    EFFEKT_STUFEN = ("voll", "sparsam", "aus")     # Menü "Effekte"; "aus" = Bild wie vor den neuen Ebenen
+
+    @staticmethod
+    def _effekte_aus_cfg(cfg):
+        """Effekt-Stufe aus den Einstellungen; ohne Eintrag oder bei ungültigem Wert "voll"."""
+        wert = cfg.get("effekte") if isinstance(cfg, dict) else None
+        return wert if isinstance(wert, str) and wert in KreisApp.EFFEKT_STUFEN else "voll"
+
     def __init__(self):
         self.dnd = False
         dpi_bewusst_machen()               # vor dem ersten Fenster (scharfe Darstellung bei 125/150/200 %)
@@ -3204,6 +3212,8 @@ class KreisApp:
         self.jai.an = self.jai_var.get()
         self._jai_ziel = ""
         self.exif_var = tk.BooleanVar(value=bool(cfg.get("exif", False)))
+        self.effekte = self._effekte_aus_cfg(cfg)
+        self._effekt_knoepfe = None    # (Knöpfe je Stufe, Stil), solange das Hauptmenü offen ist
         self.watch_var = tk.BooleanVar(value=False)
         self.preset_web_var = tk.BooleanVar(value=bool(cfg.get("preset_web", False)))
         self.tray_min_var = tk.BooleanVar(value=bool(cfg.get("tray_min", False)) and TRAY_AVAILABLE)
@@ -3862,6 +3872,7 @@ class KreisApp:
                 top.destroy()
             except tk.TclError:
                 pass
+            self._effekt_knoepfe = None
             self._speichern()
             self._wecken()
             self.root.after(80, self._fokus)
@@ -3922,6 +3933,20 @@ class KreisApp:
             q_knoepfe[w] = kn
 
         self._hud_abschnitt(inhalt, "Optionen", st)
+        zeile = tk.Frame(inhalt, bg=st["BG"])
+        zeile.pack(fill="x", pady=2)
+        tk.Label(zeile, text="Effekte", fg=st["TEXT"], bg=st["BG"], font=(FM, 8, "bold")).pack(side="left",
+                                                                                             padx=(0, 6))
+        e_knoepfe = {}
+        for w in self.EFFEKT_STUFEN:
+            an = self.effekte == w
+            kn = tk.Button(zeile, text=w, bg=st["A"] if an else st["ROW"], fg=st["BG"] if an else st["TEXT"],
+                           activebackground=st["ROW_H"], activeforeground=st["A"], bd=0, relief="flat",
+                           highlightthickness=0, font=(FM, 8, "bold"), pady=3, cursor="hand2",
+                           command=lambda v=w: self._setze_effekte(v))
+            kn.pack(side="left", fill="x", expand=True, padx=(0, 3))
+            e_knoepfe[w] = kn
+        self._effekt_knoepfe = (e_knoepfe, st)
         schalter("Ordner danach öffnen", self.open_var)
         schalter("Immer im Vordergrund", self.top_var,
                  lambda: self.root.attributes("-topmost", self.top_var.get()))
@@ -3955,6 +3980,21 @@ class KreisApp:
         top.bind("<FocusOut>", lambda e: e.widget == top and schliessen())
         top.bind("<Escape>", lambda e: schliessen())
         top.focus_set()
+
+    def _setze_effekte(self, wert):
+        """Effekt-Stufe setzen, speichern und im offenen Menü markieren (Wirkung auf das Bild: B3)."""
+        if wert not in self.EFFEKT_STUFEN:
+            return
+        self.effekte = wert
+        self._speichern()
+        if self._effekt_knoepfe:
+            knoepfe, st = self._effekt_knoepfe
+            for v, kn in knoepfe.items():
+                try:
+                    kn.configure(fg=st["BG"] if v == wert else st["TEXT"], bg=st["A"] if v == wert else st["ROW"])
+                except tk.TclError:
+                    self._effekt_knoepfe = None      # Menü schon geschlossen
+                    break
 
     # ---- JAI
     def _ansage(self, cid):
@@ -4728,7 +4768,7 @@ class KreisApp:
                 "tray_min": self.tray_min_var.get(), "ordner": self.ordner, "format": self.format,
                 "watch_ordner": self.watch_ordner, "office_bevorzugen": OFFICE_BEVORZUGEN[0],
                 "fenster": {"x": self._pos[0] + self.size // 2, "y": self._pos[1] + self.size // 2},
-                "mini": self.mini_mode, "jai": self.jai_var.get(),
+                "mini": self.mini_mode, "jai": self.jai_var.get(), "effekte": self.effekte,
             })
             speichere_einstellungen(d)
         except Exception:
