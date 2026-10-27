@@ -78,6 +78,10 @@ FITZ_LOCK = threading.RLock()
 # Standard: aus - die eingebauten Konverter liefern auf jedem Rechner dasselbe Ergebnis und können nicht
 # an einem Office-Dialog (Aktivierung, Erststart, Passwort) hängen bleiben.
 OFFICE_BEVORZUGEN = [False]
+# Bildrate: Nach so vielen Sekunden ohne Eingabe bleibt das Bild im Leerlauf stehen (Standbild);
+# danach prüft ein langsamer Takt (ms) nur noch den Wechsel des Hinweistexts.
+STANDBILD_NACH = 20.0
+PRUEF_TAKT = 500
 
 
 def fitz_sicher(funktion):
@@ -3216,9 +3220,12 @@ class KreisApp:
         self.erzeugt = set()
         self._tray = None
 
-        self.zustand = "bereit"
+        self._zustand = "bereit"         # über die Property zustand: jeder Wechsel weckt den Kreis
         self.hover = False
         self.mini_mode = mini0
+        self._tick_id = None           # after-ID der Bildschleife (es läuft immer genau eine)
+        self._standbild = False        # True: im Leerlauf wird nicht gezeichnet, nur der Prüf-Takt läuft
+        self._letzte_eingabe = self._start_t = time.time()
         self.render_zaehler = 0        # Anzahl gezeichneter Bilder (für Tests der Drosselung)
         self.welle_radius = 40.0
         self.fortschritt = 0.0
@@ -3241,7 +3248,8 @@ class KreisApp:
         self.c.bind("<ButtonRelease-1>", self._release_ev)
         self.c.bind("<Double-Button-1>", self._double_click_ev)
         self.c.bind("<Motion>", self._hover_cursor)
-        self.c.bind("<Button-3>", lambda e: self._modernes_haupt_menu(e.x_root, e.y_root))
+        self.c.bind("<Enter>", self._wecken)
+        self.c.bind("<Button-3>", lambda e: [self._wecken(), self._modernes_haupt_menu(e.x_root, e.y_root)])
         self.hinweis_phase = 0
         r.bind("<Key>", self._taste)
         r.after(250, self._fokus)
@@ -3259,7 +3267,7 @@ class KreisApp:
 
         self.zeichne_texte()
         r.after(60, self._poll)
-        r.after(20, self._tick)
+        self._tick_id = r.after(20, self._tick)
         r.after(1000, self._watch_loop)
         if self.jai.an:
             r.after(600, lambda: self._ansage("willkommen"))
@@ -3300,6 +3308,7 @@ class KreisApp:
         self._speichern()
 
     def _double_click_ev(self, e):
+        self._wecken()
         if self.zustand == "wahl" or time.time() - self._wahl_start_t < 0.6:
             return                         # Klicks im Auswahlmodus nicht als Doppelklick deuten
         if self.tray_min_var.get() and TRAY_AVAILABLE:
@@ -3327,23 +3336,60 @@ class KreisApp:
             return "run"
         return "ok" if self.ergebnis[0] else "err"
 
-    def _tick(self):
-        try:
-            if self.root.state() in ("withdrawn", "iconic"):   # minimiert / im Tray: nichts rendern
-                self.t_letzt = time.time()
-                self.root.after(500, self._tick)
-                return
-        except tk.TclError:
-            pass
-        self.render_zaehler += 1
-        jetzt = time.time()
-        dt = min(0.1, jetzt - self.t_letzt)
-        self.t_letzt = jetzt
+    @property
+    def zustand(self):
+        return self._zustand
+
+    @zustand.setter
+    def zustand(self, neu):
+        alt = getattr(self, "_zustand", None)
+        self._zustand = neu
+        if alt is not None and alt != neu:
+            self._wecken()
+
+    def _wecken(self, _e=None):
+        """Jede Eingabe: Leerlauf-Uhr zurücksetzen; aus dem Standbild sofort (genau einmal) weiterzeichnen."""
+        self._letzte_eingabe = time.time()
+        if self._standbild:
+            if self._tick_id is not None:
+                try:
+                    self.root.after_cancel(self._tick_id)
+                except Exception:
+                    pass
+            self._standbild = False
+            self._tick_id = self.root.after(0, self._tick)
+
+    def _standbild_faellig(self, jetzt):
+        return (self.zustand == "bereit" and not self.hover and not self.wahl_queue
+                and jetzt - self._letzte_eingabe >= STANDBILD_NACH)
+
+    def _hinweis_wechsel(self, jetzt):
         phase = int(jetzt // 4) % 2
         if phase != self.hinweis_phase:
             self.hinweis_phase = phase
             if self.zustand == "bereit" and not self.hover and not self.mini_mode:
                 self.zeichne_texte()
+
+    def _tick(self):
+        try:
+            if self.root.state() in ("withdrawn", "iconic"):   # minimiert / im Tray: nichts rendern
+                self.t_letzt = time.time()
+                self._tick_id = self.root.after(500, self._tick)
+                return
+        except tk.TclError:
+            pass
+        jetzt = time.time()
+        if self._standbild_faellig(jetzt):          # Standbild: letztes Bild bleibt stehen
+            self._standbild = True
+            self.t_letzt = jetzt
+            self._hinweis_wechsel(jetzt)
+            self._tick_id = self.root.after(PRUEF_TAKT, self._tick)
+            return
+        self._standbild = False
+        self.render_zaehler += 1
+        dt = min(0.1, jetzt - self.t_letzt)
+        self.t_letzt = jetzt
+        self._hinweis_wechsel(jetzt)
         if self.zustand == "bereit" and self.hover:
             v_t, v_r = 45, 230
             self.welle_radius += 120 * dt
@@ -3381,13 +3427,14 @@ class KreisApp:
         self.c.tag_lower(self.bild_id)
         if not self.mini_mode:
             self._funken_schritt()
-        self.root.after(self._tick_pause(), self._tick)
+        self._tick_id = self.root.after(self._tick_pause(), self._tick)
 
     def _tick_pause(self):
-        """Millisekunden bis zum nächsten Bild: während der Arbeit flüssig, im Mini-Modus sparsam."""
+        """Millisekunden bis zum nächsten Bild: während der Arbeit flüssig (30 fps), im Leerlauf 12 fps,
+        im Mini-Modus sparsam."""
         if self.mini_mode:
             return 33 if (self.zustand == "laeuft" or self.hover) else 125
-        return 33 if (self.hover or self.zustand not in ("bereit",)) else 50
+        return 33 if (self.hover or self.zustand != "bereit") else 83
 
     def _funken_start(self):
         t_data = theme_daten(self.theme_var.get())
@@ -3655,6 +3702,7 @@ class KreisApp:
                 top.destroy()
             except tk.TclError:
                 pass
+            self._wecken()
             self.root.after(80, self._fokus)
 
         aktiver = None
@@ -3815,6 +3863,7 @@ class KreisApp:
             except tk.TclError:
                 pass
             self._speichern()
+            self._wecken()
             self.root.after(80, self._fokus)
 
         def aktion(text, cmd, fg=None):
@@ -3958,6 +4007,7 @@ class KreisApp:
         self._setze_format(KATEGORIEN[arten[i]][0])
 
     def _taste(self, e):
+        self._wecken()
         ks = e.keysym
         kl = ks.lower()
         if self.zustand == "wahl":
@@ -4115,10 +4165,12 @@ class KreisApp:
         return None
 
     def _hover_cursor(self, e):
+        self._wecken()
         if not self.mini_mode:
             self.c.configure(cursor="hand2" if self._tag_bei(e.x, e.y) else "")
 
     def _press_ev(self, e):
+        self._wecken()
         self._fokus()
         self._press = {"x": e.x_root, "y": e.y_root, "wx": self.root.winfo_x(),
                        "wy": self.root.winfo_y(), "moved": False, "tag": self._tag_bei(e.x, e.y)}
@@ -4135,6 +4187,7 @@ class KreisApp:
             self.root.geometry(f"+{self._pos[0]}+{self._pos[1]}")
 
     def _release_ev(self, e):
+        self._wecken()
         p, self._press = self._press, None
         if p and p["moved"]:
             self._speichern()                 # neue Position merken
@@ -4184,6 +4237,7 @@ class KreisApp:
             self.starten(list(pfade))
 
     def _on_enter(self, event):
+        self._wecken()
         if self.zustand == "bereit":
             self.hover = True
             self.zeichne_texte()
@@ -4195,6 +4249,7 @@ class KreisApp:
         return event.action
 
     def _on_drop(self, event):
+        self._wecken()
         self.hover = False
         if self.sound_var.get():
             spiele_sound("drop")
