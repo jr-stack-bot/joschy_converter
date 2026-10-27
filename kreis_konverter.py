@@ -3895,16 +3895,42 @@ class KreisApp:
             self.root.after(80, self._fokus)
 
         aktiver = None
+        knoepfe = []
         for kat in sichtbare_kategorien():
             formate = KATEGORIEN[kat]
             self._hud_abschnitt(liste, kat, st, kennfarbe=FARBEN[kat][0])
             for fm in formate:
                 b = self._hud_knopf(liste, fm.upper(), lambda f=fm: [self._setze_format(f), schliessen()], st,
                                     schrift=(FH, 8), pady=1)
+                knoepfe.append(b)
                 if fm == self.format:
                     b.configure(text="▶ " + fm.upper())
                     self._hud_markiere(b, True, st)
                     aktiver = b
+        gewaehlt = [knoepfe.index(aktiver) if aktiver is not None else -1]
+
+        def pfeil(schritt):                     # Pfeil hoch/runter: Zeile wandert, Liste scrollt mit
+            if not knoepfe:
+                return
+            if gewaehlt[0] >= 0:
+                alt = knoepfe[gewaehlt[0]]
+                alt.configure(bg=st["ROW"], fg=alt._fg)
+                alt._balken.configure(bg=alt._balken_farbe)
+            gewaehlt[0] = (gewaehlt[0] + schritt) % len(knoepfe)
+            b = knoepfe[gewaehlt[0]]
+            b.configure(bg=st["ROW_H"], fg=st["A"])
+            b._balken.configure(bg=st["A"])
+            h = liste.winfo_height()
+            if h > 0:
+                erst, letzt = canvas_in.yview()
+                oben = (b.winfo_rooty() - liste.winfo_rooty()) / h
+                unten = oben + b.winfo_height() / h
+                if oben < erst or unten > letzt:
+                    canvas_in.yview_moveto(max(0.0, oben - (letzt - erst) / 2))
+
+        def enter(_e=None):
+            if gewaehlt[0] >= 0:
+                knoepfe[gewaehlt[0]].invoke()
 
         def zum_aktiven():                      # aktuelles Format sichtbar machen
             top.update_idletasks()
@@ -3913,6 +3939,10 @@ class KreisApp:
         top.after(30, zum_aktiven)
         top.bind("<FocusOut>", lambda e: e.widget == top and schliessen())
         top.bind("<Escape>", lambda e: schliessen())
+        top.bind("<Up>", lambda e: pfeil(-1))
+        top.bind("<Down>", lambda e: pfeil(1))
+        top.bind("<Return>", enter)
+        top.bind("<KP_Enter>", enter)
         top.focus_set()
 
     def _historie_dialog(self):
