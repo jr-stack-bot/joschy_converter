@@ -3875,8 +3875,14 @@ class KreisApp:
         leiste.pack(side="right", fill="y", padx=(4, 0))
         canvas_in.pack(side="left", fill="both", expand=True)
 
+        rest = [0]                              # Touchpads liefern viele kleine delta-Werte (|delta| < 120)
+
         def rad(event):
-            canvas_in.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            rest[0] -= event.delta
+            schritte = int(rest[0] / 120)       # Richtung bleibt erhalten, Rest wird gesammelt
+            if schritte:
+                rest[0] -= schritte * 120
+                canvas_in.yview_scroll(schritte, "units")
         canvas_in.bind_all("<MouseWheel>", rad)
 
         def schliessen():
