@@ -3500,6 +3500,8 @@ class KreisApp:
         if sig != self._budget_sig:                 # Stufen-/Themenwechsel, Ringe fertig: neu aufwärmen
             self._budget_sig = sig
             self._budget.leeren()
+        if stufe != "aus" and self.g.ringe is None:
+            self._budget.leeren()                   # Ringe/Caches noch im Bau: erst danach aufwärmen und messen
         faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
 
         key = self._schluessel()

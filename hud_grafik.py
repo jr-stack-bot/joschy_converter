@@ -794,6 +794,29 @@ class Grafik:
         auf_ebene(img, umriss)
         return img
 
+    @staticmethod
+    def _hex_formen():
+        """Farblose Sechseck-Ringe des Emblems (überabgetastet), für alle keys und Themes gleich."""
+        LS = 124 * SS
+        c = LS / 2
+
+        def box(r):
+            return [c - r * SS, c - r * SS, c + r * SS, c + r * SS]
+
+        hex_a = Image.new("L", (LS, LS), 0)                        # äußerer Ring: drei breite Segmente
+        d = ImageDraw.Draw(hex_a)
+        for i in range(3):
+            a0 = i * 120
+            d.arc(box(35), a0, a0 + 74, fill=255, width=int(3 * SS))
+            d.arc(box(35), a0 + 82, a0 + 100, fill=150, width=int(1.6 * SS))
+            d.arc(box(39.5), a0 + 30, a0 + 44, fill=200, width=int(1.4 * SS))
+        hex_b = Image.new("L", (LS, LS), 0)                        # innerer Ring: Strichkranz
+        d = ImageDraw.Draw(hex_b)
+        for i in range(0, 360, 15):
+            d.arc(box(29), i, i + 9, fill=210, width=int(2 * SS))
+        d.ellipse(box(22), outline=110, width=SS)
+        return hex_a, hex_b
+
     def _emblem(self, key, glyph):
         """Reaktorkern: konzentrische, gegenläufig drehende Ringe mit Symbol in der Mitte."""
         c1, c2 = self.farben[key]
@@ -811,18 +834,7 @@ class Grafik:
         LP = P(L)                                                  # Größe in echten Pixeln
         glow = glow.resize((LP, LP), Image.LANCZOS)
 
-        hex_a = Image.new("L", (LS, LS), 0)                        # äußerer Ring: drei breite Segmente
-        d = ImageDraw.Draw(hex_a)
-        for i in range(3):
-            a0 = i * 120
-            d.arc(box(35), a0, a0 + 74, fill=255, width=int(3 * SS))
-            d.arc(box(35), a0 + 82, a0 + 100, fill=150, width=int(1.6 * SS))
-            d.arc(box(39.5), a0 + 30, a0 + 44, fill=200, width=int(1.4 * SS))
-        hex_b = Image.new("L", (LS, LS), 0)                        # innerer Ring: Strichkranz
-        d = ImageDraw.Draw(hex_b)
-        for i in range(0, 360, 15):
-            d.arc(box(29), i, i + 9, fill=210, width=int(2 * SS))
-        d.ellipse(box(22), outline=110, width=SS)
+        hex_a, hex_b = self._hex_formen()
 
         gl = Image.new("L", (LS, LS), 0)
         d = ImageDraw.Draw(gl)
@@ -888,12 +900,7 @@ class Grafik:
         if SKALA != 1.0:
             return
         abbruch = abbruch or (lambda: False)
-        embs = list(self.emb.values())
-        if embs:
-            hex_a, hex_b = embs[0]["hex_a"], embs[0]["hex_b"]
-        else:
-            probe = self._emblem("Bild", "pfeil")
-            hex_a, hex_b = probe["hex_a"], probe["hex_b"]
+        hex_a, hex_b = self._hex_formen()        # eigene Masken: kein Zugriff auf emb aus diesem Thread
         for k in range(120):
             if abbruch():
                 return
