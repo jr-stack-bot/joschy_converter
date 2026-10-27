@@ -3945,6 +3945,13 @@ class KreisApp:
         top.bind("<KP_Enter>", enter)
         top.focus_set()
 
+        def fokus():                            # rahmenloses topmost-Popup: unter Windows reicht focus_set oft nicht
+            try:
+                top.focus_force()
+            except tk.TclError:
+                pass
+        top.after(30, fokus)
+
     def _historie_dialog(self):
         top, inhalt, st = self._hud_fenster("Protokoll")
         mitte = tk.Frame(inhalt, bg=st["BG"])
