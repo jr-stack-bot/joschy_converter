@@ -82,6 +82,7 @@ OFFICE_BEVORZUGEN = [False]
 # danach prüft ein langsamer Takt (ms) nur noch den Wechsel des Hinweistexts.
 STANDBILD_NACH = 20.0
 PRUEF_TAKT = 500
+LEERLAUF_TIPP_NACH = 120.0     # s nach dem Start: erst dann gibt JAI (ausführlich) beim Standbild einen Tipp
 
 
 def fitz_sicher(funktion):
@@ -3290,6 +3291,10 @@ class KreisApp:
         self._tick_id = None           # after-ID der Bildschleife (es läuft immer genau eine)
         self._standbild = False        # True: im Leerlauf wird nicht gezeichnet, nur der Prüf-Takt läuft
         self._letzte_eingabe = self._start_t = time.time()
+        self._etwas_umgewandelt = False    # JAI: Leerlauf-Tipp nur, solange noch nichts umgewandelt wurde
+        self._leerlauf_gesagt = False
+        self._auftrag_n = 0                # Dateien im laufenden Auftrag (Halbzeit-Ansage ab 10)
+        self._halbzeit_gesagt = False
         self.render_zaehler = 0        # Anzahl gezeichneter Bilder (für Tests der Drosselung)
         self.welle_radius = 40.0
         self.fortschritt = 0.0
@@ -3344,7 +3349,10 @@ class KreisApp:
         self._tick_id = r.after(20, self._tick)
         r.after(1000, self._watch_loop)
         if self.jai.an:
-            r.after(600, lambda: self._ansage("willkommen"))
+            r.after(600, self._begruessen)
+
+    def _begruessen(self):
+        self._ansage(self.begruessung(time.localtime().tm_hour, self.jai.ausfuehrlich))
 
     def _tk_fehler(self, exc, val, tb):
         import traceback
@@ -3363,6 +3371,7 @@ class KreisApp:
         self.g.rebuild_theme(neues_theme)
         self.zeichne_texte()
         self._speichern()
+        self._ansage("design_gewechselt", True)
 
     def _toggle_mini(self):
         alt = self.size
@@ -3392,8 +3401,10 @@ class KreisApp:
             self._toggle_mini()
         else:
             tag = self._tag_bei(e.x, e.y)
-            if tag not in ("btn_menu", "btn_close", "prev", "next", "fmt", "datei_auswahl"):
-                self._toggle_mini()
+            if tag in ("btn_menu", "btn_close", "prev", "next", "fmt", "datei_auswahl"):
+                return
+            self._toggle_mini()
+        self._ansage("mini_an" if self.mini_mode else "mini_aus", True)
 
     def _anzeige_format(self):
         """Im Modus FORMAT WÄHLEN das gerade angebotene Format, sonst das eingestellte."""
@@ -3437,6 +3448,13 @@ class KreisApp:
         return (self.zustand == "bereit" and not self.hover and not self.wahl_queue
                 and jetzt - self._letzte_eingabe >= STANDBILD_NACH)
 
+    def _leerlauf_pruefen(self, jetzt):
+        """Beim Eintritt ins Standbild: einmal pro Sitzung ein Tipp, wenn nach 2 min noch nichts umgewandelt wurde."""
+        if self._leerlauf_gesagt or self._etwas_umgewandelt or jetzt - self._start_t < LEERLAUF_TIPP_NACH:
+            return
+        self._leerlauf_gesagt = True
+        self._ansage("leerlauf", True)
+
     def _hinweis_wechsel(self, jetzt):
         phase = int(jetzt // 4) % 2
         if phase != self.hinweis_phase:
@@ -3456,6 +3474,8 @@ class KreisApp:
         jetzt = time.time()
         self._messung_pruefen(jetzt)
         if self._standbild_faellig(jetzt):          # Standbild: letztes Bild bleibt stehen
+            if not self._standbild:
+                self._leerlauf_pruefen(jetzt)
             self._standbild = True
             self.t_letzt = jetzt
             self._budget.leeren()                   # Standbild: nach dem Aufwachen neu aufwärmen
@@ -4014,6 +4034,7 @@ class KreisApp:
         top.bind("<Escape>", zu)
         top.focus_set()
         self._lizenz_fenster = (top, feld, dateien)      # für Tests
+        self._ansage("lizenzen", True)
 
     def _modernes_haupt_menu(self, x, y):
         top, inhalt, st = self._hud_fenster("System")
@@ -4031,8 +4052,8 @@ class KreisApp:
         def aktion(text, cmd, fg=None):
             return self._hud_knopf(inhalt, text, lambda: [schliessen(), cmd()], st, fg)
 
-        def schalter(text, var, danach=None):
-            """Ein-/Aus-Schalter, der das Menü offen lässt."""
+        def schalter(text, var, danach=None, ansage=True):
+            """Ein-/Aus-Schalter, der das Menü offen lässt (ansage: JAI sagt „gespeichert“)."""
             b = self._hud_knopf(inhalt, "", None, st)
 
             def zeige():
@@ -4045,6 +4066,8 @@ class KreisApp:
                 zeige()
                 if danach:
                     danach()
+                if ansage:
+                    self._ansage("gespeichert", True)
             b.configure(command=umschalten)
             zeige()
 
@@ -4073,6 +4096,7 @@ class KreisApp:
             self.qual.set(w)
             for v, kn in q_knoepfe.items():
                 kn.configure(fg=st["BG"] if v == w else st["TEXT"], bg=st["A"] if v == w else st["ROW"])
+            self._ansage("gespeichert", True)
 
         for w in (100, 92, 85, 75):
             an = self.qual.get() == w
@@ -4102,8 +4126,8 @@ class KreisApp:
         schalter("Immer im Vordergrund", self.top_var,
                  lambda: self.root.attributes("-topmost", self.top_var.get()))
         schalter("Audio-Feedback", self.sound_var)
-        schalter("JAI-Stimme", self.jai_var, self._jai_umschalten)
-        schalter("Ausführliche Ansagen", self.jai_ausf_var, self._jai_ausf_umschalten)
+        schalter("JAI-Stimme", self.jai_var, self._jai_umschalten, ansage=False)
+        schalter("Ausführliche Ansagen", self.jai_ausf_var, self._jai_ausf_umschalten, ansage=False)
         aktion("▶  JAI testen", self._jai_testen)
         schalter("EXIF-Daten entfernen", self.exif_var)
         schalter("Web-Preset (1200 px, ohne EXIF)", self.preset_web_var, self.zeichne_texte)
@@ -4141,6 +4165,7 @@ class KreisApp:
         self._budget.freigeben()                    # manuelle Wahl hebt die interne Abstufung auf
         self._speichern()
         self._wecken()                              # auch im Standbild sofort sichtbar
+        self._ansage(f"effekte_{wert}", True)
         if self._effekt_knoepfe:
             knoepfe, st = self._effekt_knoepfe
             for v, kn in knoepfe.items():
@@ -4192,6 +4217,10 @@ class KreisApp:
                 self._jai_after = None
                 self._ansage(teile, ausfuehrlich=True)
             self._jai_after = self.root.after(ms, los)
+
+    def _jai_ziel_ansage(self, clip):
+        """Format/Kategorie (ausführlich), 600 ms nach der letzten Taste; ohne Clip (Erweiterung) still."""
+        self._jai_spaeter((clip,) if clip and self.jai.an and self.jai.ausfuehrlich else None, 600)
 
     def _jai_umschalten(self):
         self.jai.an = self.jai_var.get()
@@ -4308,6 +4337,7 @@ class KreisApp:
         akt = kat_von_format(self.format)
         i = ((arten.index(akt) if akt in arten else 0) + schritt) % len(arten)
         self._setze_format(KATEGORIEN[arten[i]][0])
+        self._jai_ziel_ansage(self.clip_fuer_kat(arten[i]))
 
     def _taste(self, e):
         self._wecken()
@@ -4371,6 +4401,7 @@ class KreisApp:
         formate = sichtbare_formate()
         i = ((formate.index(self.format) if self.format in formate else 0) + schritt) % len(formate)
         self._setze_format(formate[i])
+        self._jai_ziel_ansage(self.clip_fuer_format(formate[i]))
 
     def qr_dialog_starten(self):
         top, inhalt, st = self._hud_fenster("QR-Code Generator")
@@ -4434,11 +4465,13 @@ class KreisApp:
             self.ordner = os.path.normpath(p)
             self.zeichne_texte()
             self._speichern()
+            self._ansage("gespeichert", True)
 
     def _ordner_reset(self):
         self.ordner = ""
         self.zeichne_texte()
         self._speichern()
+        self._ansage("gespeichert", True)
 
     def _tag_bei(self, x, y):
         x, y = x / hg.SKALA, y / hg.SKALA            # echte Pixel -> logische Koordinaten
@@ -4633,7 +4666,15 @@ class KreisApp:
         self.abbruch = threading.Event()
         self.zeichne_texte()
         self._jai_ziel = ziel_ext
-        self._ansage("datei_erkannt" if len(dateien) == 1 else "konvertierung_laeuft")
+        n = len(dateien)
+        self._auftrag_n, self._halbzeit_gesagt, self._etwas_umgewandelt = n, False, True
+        self._jai_spaeter(None, 0)               # ausstehende Format-Ansage ist jetzt überholt
+        if n == 1:
+            self._ansage("datei_erkannt")
+        elif self.jai.ausfuehrlich:
+            self._ansage(self.zahl_teile(n) + ("dateien_erkannt",))
+        else:
+            self._ansage("konvertierung_laeuft")
         args = (dateien, ziel_ext, self.ordner, self.qual.get(), strip_exif, self.abbruch)
         threading.Thread(target=self._arbeit, args=args, daemon=True).start()
 
@@ -4661,7 +4702,10 @@ class KreisApp:
             self._toggle_mini()              # die Auswahl braucht den großen Kreis
         self.hover = False
         self.zustand = "wahl"
-        if not self._ansage("format_waehlen") and self.sound_var.get():
+        teile = ("format_waehlen",)
+        if self.jai.ausfuehrlich and 2 <= self.wahl["gesamt"] <= 20:
+            teile = ("gruppe", f"z_{self.wahl['nr']}", "von", f"z_{self.wahl['gesamt']}") + teile
+        if not self._ansage(teile if len(teile) > 1 else teile[0]) and self.sound_var.get():
             spiele_sound("drop")
         self.zeichne_texte()
         self._fokus()
@@ -4673,6 +4717,7 @@ class KreisApp:
         w = self.wahl
         w["i"] = (w["i"] + schritt) % len(w["formate"])
         self.zeichne_texte()
+        self._jai_ziel_ansage(self.clip_fuer_format(w["formate"][w["i"]]))
 
     def _wahl_ende(self):
         self.wahl = None
@@ -4946,6 +4991,9 @@ class KreisApp:
         self.fortschritt = frac
         self.info = (zaehler, name, f"{int(frac * 100)} %")
         self.zeichne_texte()
+        if frac > 0.5 and self._auftrag_n >= 10 and not self._halbzeit_gesagt:
+            self._halbzeit_gesagt = True
+            self._ansage("halbzeit", True)
 
     def _erkannt(self, text):
         self.erkannt_text = text
@@ -4964,6 +5012,8 @@ class KreisApp:
 
         self.ergebnis = (ok, fehler, fehltext)
         self.warnungen = list(warnungen or [])
+        if ok:
+            self._etwas_umgewandelt = True       # auch der QR-Code-Dialog, der nicht über starten läuft
         del self.historie[:-200]
         self._zeige_fertig()
         teile = self.jai_ende(ok, fehler, fehltext, self._jai_ziel, self.warnungen,
@@ -5041,6 +5091,7 @@ class KreisApp:
 
     def _beenden(self):
         try:
+            self._jai_spaeter(None, 0)
             self.abbruch.set()
             stoppe_prozesse()
             self._speichern()
@@ -5078,6 +5129,7 @@ class KreisApp:
         if self.watch_var.get():
             self.watch_var.set(False)
             self.zeichne_texte()
+            self._ansage("ueberwachung_aus", True)
             return
         self.root.attributes("-topmost", False)
         p = filedialog.askdirectory(title="Ordner zum Überwachen wählen",
@@ -5093,6 +5145,7 @@ class KreisApp:
         self.watch_var.set(True)
         self._speichern()
         self.zeichne_texte()
+        self._ansage("ueberwachung_an", True)
 
     def _watch_moeglich(self, pfad):
         if ist_folgeteil(pfad):
