@@ -3443,8 +3443,11 @@ class KreisApp:
         else:
             self.photo.paste(out_img)       # vorhandenes Bild wiederverwenden statt jedes Mal neu anlegen
         self.c.tag_lower(self.bild_id)
-        if stufe != "aus" and self.g.ringe is None:
-            self.g.ringe_starten()                  # nach dem ersten Bild im Hintergrund (höchstens einmal je Grafik)
+        if stufe == "aus":
+            if self.g.ringe is not None or self.g._ringe_thread is not None:
+                self.g.ringe_freigeben()            # "aus": Ringe/Glow freigeben (beim Zurückschalten neu gebaut)
+        elif self.g.ringe is None:
+            self.g.ringe_starten()                  # nach dem ersten Bild im Hintergrund (höchstens einmal)
         if not self.mini_mode:
             self._funken_schritt()
         self._tick_id = self.root.after(self._tick_pause(), self._tick)

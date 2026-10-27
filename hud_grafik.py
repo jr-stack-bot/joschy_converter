@@ -208,12 +208,15 @@ class Grafik:
         self.kante_mini = ImageChops.subtract(self.schnitt_mini, self._harte_maske(P(S_MINI), -1.6 * SKALA))
         self.trans_gross = Image.new("RGB", (P(S_NORMAL), P(S_NORMAL)), TRANS_RGBA[:3])
         self.trans_mini = Image.new("RGB", (P(S_MINI), P(S_MINI)), TRANS_RGBA[:3])
-        # Zierringe: Bildfolgen entstehen nach dem ersten Bild im Hintergrund (bis dahin None)
-        self.ringe = None
+        # Zierringe und Glow (B3) entstehen erst bei Bedarf im Hintergrund (Effekte != "aus"), bis dahin None.
+        # Bei "aus" kosten sie weder Speicher noch Startzeit.
+        self.ringe = None           # {"A": [Maske, ...], ...}, zugeschnitten auf b3_box
+        self.glow = None            # {("ABC", stufe): Maske, ("AB", GLOW_SPARSAM): Maske}, zugeschnitten auf b3_box
+        self.b3_box = None          # gemeinsamer Ausschnitt (links, oben, rechts, unten) in echten Pixeln
         self._ringe_thread = None
         self._ringe_lock = threading.Lock()
-        self.glow_stufen = {name: self._glow(name) for name in RINGE}
-        self._glow_kombi = {}
+        self._ringe_gen = 0         # erhöht bei jeder Freigabe; ein veralteter Bau-Thread verwirft sein Ergebnis
+        self._b3_farbe = None       # (farbe, box, Ausschnitt) - Cache für den zugeschnittenen Farbverlauf
         self.rebuild_theme(akt_theme)
 
     @staticmethod
@@ -305,23 +308,64 @@ class Grafik:
         return verkleinere(m)
 
     def ringe_bauen(self):
-        """Alle Bildfolgen der Zierringe erzeugen (synchron); self.ringe wird erst am Ende in einem Schritt gesetzt."""
-        ringe = {name: [self._ring_bild(name, k) for k in range(werte[4])] for name, werte in RINGE.items()}
-        self.ringe = ringe
+        """Ringe und Glow erzeugen (synchron). Gesetzt wird erst am Ende (glow, b3_box, zuletzt ringe).
+
+        Gehalten werden nur die kombinierten Glow-Masken (16 Stufen A+B+C für "voll", Stufe 10 A+B für
+        "sparsam"); die Einzelstufen sind danach frei. Alle Masken werden verlustfrei auf den gemeinsamen
+        Ausschnitt b3_box zugeschnitten (außerhalb ist alles 0) - so bleibt B3 unter 25/45 MB bei 150/200 %.
+        """
+        with self._ringe_lock:
+            gen = self._ringe_gen
+        einzeln = {name: self._glow(name) for name in RINGE}
+        glow = {}
+        for i in range(16):
+            glow[("ABC", i)] = ImageChops.screen(ImageChops.screen(einzeln["A"][i], einzeln["B"][i]), einzeln["C"][i])
+        glow[("AB", GLOW_SPARSAM)] = ImageChops.screen(einzeln["A"][GLOW_SPARSAM], einzeln["B"][GLOW_SPARSAM])
+        del einzeln
+        box = glow[("ABC", 15)].getbbox()                      # hellste Stufe = größte Ausdehnung
+        glow = {k: m.crop(box) for k, m in glow.items()}
+        ringe = {}
+        for name, werte in RINGE.items():
+            folge = []
+            for k in range(werte[4]):
+                m = self._ring_bild(name, k)
+                bb = m.getbbox()
+                if bb and not (bb[0] >= box[0] and bb[1] >= box[1] and bb[2] <= box[2] and bb[3] <= box[3]):
+                    raise ValueError(f"Ring {name} ragt über den Glow-Ausschnitt hinaus")
+                folge.append(m.crop(box))
+            ringe[name] = folge
+        with self._ringe_lock:
+            if gen != self._ringe_gen:                          # inzwischen freigegeben: verwerfen
+                return
+            self.glow, self.b3_box = glow, box
+            self.ringe = ringe
 
     def ringe_starten(self):
-        """ringe_bauen in einem Daemon-Thread starten (höchstens einmal je Grafik)."""
+        """ringe_bauen in einem Daemon-Thread starten (höchstens einmal, nach ringe_freigeben wieder möglich)."""
         with self._ringe_lock:
             if self._ringe_thread is not None or self.ringe is not None:
                 return
             self._ringe_thread = threading.Thread(target=self.ringe_bauen, name="hud-ringe", daemon=True)
-        self._ringe_thread.start()
+            thread = self._ringe_thread
+        thread.start()
+
+    def ringe_freigeben(self):
+        """Effekte "aus": Ringe und Glow freigeben; ein laufender Bau verwirft sein Ergebnis.
+        Nur aus dem Zeichen-Thread aufrufen (zeichne liest die Felder ohne Sperre)."""
+        with self._ringe_lock:
+            self._ringe_gen += 1
+            self.ringe = None
+            self.glow = None
+            self.b3_box = None
+            self._ringe_thread = None
+            self._b3_farbe = None
 
     def ringe_bytes(self):
-        ringe = self.ringe
-        if not ringe:
-            return 0
-        return sum(b.width * b.height * len(b.getbands()) for folge in ringe.values() for b in folge)
+        """Speicher aller B3-Daten (Ringe, Glow-Masken, Farb-Ausschnitt) in Bytes."""
+        bilder = [b for folge in (self.ringe or {}).values() for b in folge] + list((self.glow or {}).values())
+        if self._b3_farbe is not None:
+            bilder.append(self._b3_farbe[2])
+        return sum(b.width * b.height * len(b.getbands()) for b in bilder)
 
     def ring_maske(self, name, winkel):
         _, _, _, periode, bilder, _ = RINGE[name]
@@ -339,18 +383,16 @@ class Grafik:
         i = int(round((puls - 0.30) / 0.70 * 15))
         return max(0, min(15, i))
 
-    def glow_fuer(self, name, puls):
-        return self.glow_stufen[name][self.glow_index(puls)]
-
     def glow_kombi(self, namen, i):
         """Glow mehrerer Ringe in Stufe i als eine Maske (screen = wie nacheinander in derselben Farbe eingefügt)."""
-        m = self._glow_kombi.get((namen, i))
-        if m is None:
-            m = self.glow_stufen[namen[0]][i]
-            for name in namen[1:]:
-                m = ImageChops.screen(m, self.glow_stufen[name][i])
-            self._glow_kombi[(namen, i)] = m
-        return m
+        return self.glow[(namen, i)]
+
+    def farbe_b3(self, farbe):
+        """Farbverlauf, auf b3_box zugeschnitten (einfacher Cache, wechselt nur mit key/Theme)."""
+        c = self._b3_farbe
+        if c is None or c[0] is not farbe or c[1] != self.b3_box:
+            c = self._b3_farbe = (farbe, self.b3_box, farbe.crop(self.b3_box))
+        return c[2]
 
     def _radar(self):
         N = 340 * SS
@@ -728,17 +770,15 @@ def zeichne(g, d):
 
     rahmen.paste(farbe, (0, 0), g.spur)
     rahmen.paste(farbe, (0, 0), g.ticks[int((d.w_ticks % 15) / 0.5) % 30])
-    if d.stufe != "aus":
+    if d.stufe != "aus" and g.ringe is not None:
         # Zierringe und Glow in derselben Farbe: Masken erst vereinen, dann nur einmal einfügen (spart Zeit).
         # Die Ringe überlappen sich nicht (lighter ist exakt); Glow kommt per screen dazu.
         namen = "ABC" if d.stufe == "voll" else "AB"
-        maske = g.glow_kombi(namen, g.glow_index(puls) if d.stufe == "voll" else GLOW_SPARSAM)
-        if g.ringe is not None:
-            ringe = g.ring_maske(namen[0], d.w_ringe[0])
-            for i in range(1, len(namen)):
-                ringe = ImageChops.lighter(ringe, g.ring_maske(namen[i], d.w_ringe[i]))
-            maske = ImageChops.screen(ringe, maske)
-        rahmen.paste(farbe, (0, 0), maske)
+        maske = g.ring_maske(namen[0], d.w_ringe[0])
+        for i in range(1, len(namen)):
+            maske = ImageChops.lighter(maske, g.ring_maske(namen[i], d.w_ringe[i]))
+        maske = ImageChops.screen(maske, g.glow_kombi(namen, g.glow_index(puls) if d.stufe == "voll" else GLOW_SPARSAM))
+        rahmen.paste(g.farbe_b3(farbe), g.b3_box[:2], maske)
     rahmen.paste(farbe, (0, 0), g.radar_maske(d.w_radar))
 
     if d.hover:
