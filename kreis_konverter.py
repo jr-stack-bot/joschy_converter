@@ -532,12 +532,17 @@ def spiele_sound(art):
 class JAI:
     """Kurze Sprachansagen aus jai/<id>.mp3 (in der exe aus _MEIPASS, sonst neben dem Skript).
     Wiedergabe über Windows-MCI (winmm, per ctypes) in einem eigenen Thread – keine Zusatzpakete.
-    Eine neue Ansage unterbricht die laufende. Fehlt der Ordner oder ein Clip oder klappt die
-    Wiedergabe nicht, passiert einfach nichts."""
+    Eine Ansage ist eine Folge aus höchstens MAX_TEILE Clips, die nacheinander gespielt werden.
+    Eine neue Ansage bricht die laufende Folge sofort ab. Fehlt der Ordner oder auch nur ein Clip
+    oder klappt die Wiedergabe nicht, passiert einfach nichts (nie halbe Sätze)."""
     ALIAS = "kreis_jai"
+    MAX_TEILE = 5
+    TAKT = 0.02           # s zwischen zwei Status-Abfragen
+    LIMIT_TEIL = 4.0      # s, spätestens dann geht es mit dem nächsten Teil weiter
 
     def __init__(self, mci=None):
         self.an = False
+        self.ausfuehrlich = False
         self._mci = mci                 # Testen: eigene Funktion statt winmm
         self._auftraege = queue.Queue()
         self._thread = None
@@ -552,46 +557,96 @@ class JAI:
         return pfad if os.path.isfile(pfad) else None
 
     def _sende(self, befehl):
+        """mci(befehl) -> int | str: Rückgabecode, bei "status …" der Antworttext."""
         if self._mci is None:
             import ctypes
             winmm = ctypes.windll.winmm
             fn = winmm.mciSendStringW
 
             def mci(b):
+                if b.startswith("status "):
+                    puffer = ctypes.create_unicode_buffer(64)
+                    fn(b, puffer, 64, None)
+                    return puffer.value
                 return fn(b, None, 0, None)
             self._mci = mci
         return self._mci(befehl)
 
-    def _lauf(self):
-        while True:
-            pfad = self._auftraege.get()
-            try:
-                while True:              # nur die neueste Ansage zählt
-                    pfad = self._auftraege.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                if self._offen:
-                    self._sende(f"close {self.ALIAS}")
-                    self._offen = False
-                if self._sende(f'open "{pfad}" type mpegvideo alias {self.ALIAS}') == 0:
-                    self._offen = True
-                    self._sende(f"play {self.ALIAS} from 0")
-            except Exception:
-                pass                     # winmm nicht verfügbar o. Ä.: still überspringen
+    def _schliesse(self):
+        if self._offen:
+            self._offen = False
+            self._sende(f"close {self.ALIAS}")
 
-    def sage(self, cid, immer=False):
-        """True, wenn eine Ansage gestartet wurde."""
+    def _neuester(self, folge=None):
+        """Nur der neueste Auftrag zählt; None, wenn die Warteschlange leer ist."""
+        try:
+            while True:
+                folge = self._auftraege.get_nowait()
+        except queue.Empty:
+            return folge
+
+    def _spiele(self, folge):
+        """Spielt eine Folge; gibt einen neuen Auftrag zurück, wenn einer dazwischenkam."""
+        for pfad in folge:
+            neu = self._neuester()
+            if neu is not None:
+                self._schliesse()
+                return neu
+            self._schliesse()
+            if self._sende(f'open "{pfad}" type mpegvideo alias {self.ALIAS}') != 0:
+                continue
+            self._offen = True
+            self._sende(f"play {self.ALIAS} from 0")
+            start = time.monotonic()
+            while True:
+                neu = self._neuester()
+                if neu is not None:
+                    self._schliesse()
+                    return neu
+                if self._sende(f"status {self.ALIAS} mode") != "playing":
+                    break
+                if time.monotonic() - start >= self.LIMIT_TEIL:
+                    break
+                time.sleep(self.TAKT)
+        self._schliesse()
+        return None
+
+    def _lauf(self):
+        folge = None
+        while True:
+            if folge is None:
+                folge = self._neuester(self._auftraege.get())
+            try:
+                folge = self._spiele(folge)
+            except Exception:
+                folge = None             # winmm nicht verfügbar o. Ä.: still überspringen
+                try:
+                    self._schliesse()
+                except Exception:
+                    self._offen = False
+
+    def sage(self, teile, immer=False):
+        """teile: Clip-ID oder Tupel von Clip-IDs. True, wenn eine Ansage gestartet wurde."""
         if not (self.an or immer):
             return False
         try:
-            pfad = self.clip(cid)
-            if not pfad or (self._mci is None and not hasattr(sys, "getwindowsversion")):
+            if isinstance(teile, str):
+                teile = (teile,)
+            teile = tuple(teile)
+            if not teile or len(teile) > self.MAX_TEILE:
                 return False
+            if self._mci is None and not hasattr(sys, "getwindowsversion"):
+                return False
+            pfade = []
+            for cid in teile:
+                pfad = self.clip(cid)
+                if not pfad:
+                    return False
+                pfade.append(pfad)
             if self._thread is None:
                 self._thread = threading.Thread(target=self._lauf, daemon=True, name="JAI")
                 self._thread.start()
-            self._auftraege.put(pfad)
+            self._auftraege.put(tuple(pfade))
             return True
         except Exception:
             return False
