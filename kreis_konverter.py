@@ -3253,6 +3253,7 @@ class KreisApp:
         self._uhr = time.perf_counter               # misst die Zeichenzeit (B5)
         self._budget = hg.Zeitbudget()
         self._budget_geloggt = False
+        self._budget_sig = None
         self._messung = hg.Messung() if messen else None
         self._ueb = None                        # laufender Übergang: (alt_key, alt_basis, t_start, v_alt)
         self._letzter_key = self._letzte_basis = None
@@ -3393,6 +3394,7 @@ class KreisApp:
         try:
             if self.root.state() in ("withdrawn", "iconic"):   # minimiert / im Tray: nichts rendern
                 self.t_letzt = time.time()
+                self._budget.leeren()               # Pausen zählen nie als Messzeit
                 self._tick_id = self.root.after(500, self._tick)
                 return
         except tk.TclError:
@@ -3402,6 +3404,7 @@ class KreisApp:
         if self._standbild_faellig(jetzt):          # Standbild: letztes Bild bleibt stehen
             self._standbild = True
             self.t_letzt = jetzt
+            self._budget.leeren()                   # Standbild: nach dem Aufwachen neu aufwärmen
             self._hinweis_wechsel(jetzt)
             self._tick_id = self.root.after(PRUEF_TAKT, self._tick)
             return
@@ -3418,9 +3421,11 @@ class KreisApp:
         else:
             v_t, v_r = {"bereit": (10, 38), "laeuft": (60, 150), "fertig": (25, 60), "wahl": (22, 95)}[self.zustand]
             self.welle_radius = 40.0
-        stufe = self._budget.stufe(self.effekte)    # Zeitbudget: intern evtl. tiefer als eingestellt
-        if self.mini_mode and stufe == "voll":
-            stufe = "sparsam"                       # Mini-Modus: höchstens "sparsam"
+        stufe = self._gezeichnete_stufe()
+        sig = (stufe, self.mini_mode, self.theme_var.get(), self.g.ringe is not None, hg.SKALA)
+        if sig != self._budget_sig:                 # Stufen-/Themenwechsel, Ringe fertig: neu aufwärmen
+            self._budget_sig = sig
+            self._budget.leeren()
         faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
 
         key = self._schluessel()
@@ -3496,27 +3501,33 @@ class KreisApp:
             self._funken_schritt()
         self._tick_id = self.root.after(self._tick_pause(), self._tick)
 
+    def _gezeichnete_stufe(self):
+        """Effekt-Stufe dieses Bildes: Einstellung, intern evtl. tiefer (Zeitbudget), im Mini-Modus höchstens sparsam."""
+        wunsch = "sparsam" if (self.mini_mode and self.effekte == "voll") else self.effekte
+        return self._budget.stufe(wunsch)           # Abstufung ab der im Mini-Modus möglichen Stufe
+
     def _budget_melden(self, ms, jetzt):
         """Zeitbudget (B5): bei der ersten internen Herabstufung der Sitzung genau einmal loggen."""
         vorher = self._budget.runter
         if self._budget.melde(ms, jetzt) and self._budget.runter > vorher and not self._budget_geloggt:
             self._budget_geloggt = True
-            stufe = self._budget.stufe(self.effekte)
+            stufe = self._gezeichnete_stufe()
             logge(f"Effekte intern herabgestuft auf {stufe} (Zeichenzeit {self._budget.mittel:.1f} ms)")
 
     def _messung_pruefen(self, jetzt):
         """--messen: nach 60 s einmal Mittel/95-Perzentil je Zustand ins Log und nach messung.txt."""
         if self._messung is None or not self._messung.faellig(jetzt):
             return
-        bericht = self._messung.bericht() or "messen: keine Bilder gezeichnet"
+        messung, self._messung = self._messung, None    # nach Ablauf nichts mehr sammeln
+        bericht = messung.bericht() or "messen: keine Bilder gezeichnet"
         kopf = f"Messung {time.strftime('%Y-%m-%d %H:%M:%S')}, Effekte {self.effekte}, " \
-               f"Skalierung {hg.SKALA:g}, intern {self._budget.stufe(self.effekte)}"
+               f"Skalierung {hg.SKALA:g}, intern {self._gezeichnete_stufe()}"
         logge(bericht)
         try:
             with open(os.path.join(daten_ordner(), "messung.txt"), "w", encoding="utf-8") as f:
                 f.write(kopf + "\n" + bericht + "\n")
-        except OSError:
-            pass
+        except OSError as e:
+            logge(f"messung.txt nicht geschrieben: {e}")
         try:
             if sys.stdout is not None:              # pythonw/exe ohne Konsole: kein stdout
                 print(kopf + "\n" + bericht, flush=True)
@@ -4072,6 +4083,7 @@ class KreisApp:
         if wert not in self.EFFEKT_STUFEN:
             return
         self.effekte = wert
+        self._budget.freigeben()                    # manuelle Wahl hebt die interne Abstufung auf
         self._speichern()
         self._wecken()                              # auch im Standbild sofort sichtbar
         if self._effekt_knoepfe:

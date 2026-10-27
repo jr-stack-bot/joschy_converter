@@ -227,48 +227,58 @@ class Partikel:
 
 
 STUFEN = ("voll", "sparsam", "aus")
-BUDGET_MS = 15.0           # Zeichenzeit, ab der (30 Bilder in Folge) eine Stufe tiefer gezeichnet wird
-BUDGET_FOLGE = 30
-ERHOLT_MS = 8.0            # Zeichenzeit, unter der es nach ERHOLT_S eine Stufe zurück geht
-ERHOLT_S = 10.0
+BUDGET_MS = 15.0           # Median-Zeichenzeit, ab der eine Stufe tiefer gezeichnet wird
+BUDGET_FENSTER = 30        # Bilder je Messfenster (und Bilder Aufwärmphase, die nicht zählen)
+BUDGET_FENSTER_FOLGE = 2   # so viele volle Fenster in Folge müssen über BUDGET_MS liegen
 
 
 class Zeitbudget:
-    """Gleitender Mittelwert der Zeichenzeit (α = 0,1) und interne Abstufung der Effekte.
+    """Zeichenzeit-Budget: Median über Fenster von 30 Bildern, interne Abstufung der Effekte.
 
-    Die Abstufung zählt Stufen unterhalb der gewünschten Stufe; die gespeicherte Einstellung bleibt unberührt.
+    - Nach Start und nach jedem leeren() (Ring-/Glow-Neubau, Themen-/Stufenwechsel, Pause) zählen die ersten
+      30 Bilder nicht (Aufwärmphase).
+    - Liegt der Median zweier aufeinanderfolgender voller Fenster über 15 ms, wird eine Stufe tiefer gezeichnet.
+    - Kein automatisches Hochstufen (Sperre gegen Schwingen); erst freigeben() (manuelle Wahl im Menü)
+      hebt die Abstufung auf. Die gespeicherte Einstellung bleibt unberührt.
     """
 
     def __init__(self):
-        self.mittel = None
+        self.mittel = None          # Median des zuletzt vollen Fensters (ms)
         self.runter = 0             # Stufen unterhalb der gewünschten
         self._wunsch = "voll"       # zuletzt an stufe() übergeben (begrenzt die Abstufung auf "aus")
-        self._ueber = 0             # Bilder in Folge mit mittel > BUDGET_MS
-        self._unter_seit = None     # Beginn der ununterbrochenen Zeit mit mittel < ERHOLT_MS
+        self.leeren()
 
-    def melde(self, ms, jetzt):
+    def leeren(self):
+        """Fenster leeren und Aufwärmphase neu beginnen."""
+        self._aufwaermen = BUDGET_FENSTER
+        self._fenster = []
+        self._ueber = 0             # volle Fenster in Folge mit Median > BUDGET_MS
+
+    def freigeben(self):
+        """Manuelle Wahl: interne Abstufung aufheben und neu messen."""
+        self.runter = 0
+        self.mittel = None
+        self.leeren()
+
+    def melde(self, ms, jetzt=None):
         """Meldet die Zeichenzeit eines Bildes. True, wenn sich die interne Abstufung geändert hat."""
-        self.mittel = ms if self.mittel is None else self.mittel + 0.1 * (ms - self.mittel)
-        if self.mittel > BUDGET_MS:
-            self._ueber += 1
-        else:
-            self._ueber = 0
-        if self.mittel < ERHOLT_MS:
-            if self._unter_seit is None:
-                self._unter_seit = jetzt
-        else:
-            self._unter_seit = None
-        if self._ueber >= BUDGET_FOLGE:
-            self._ueber = 0
-            if self.runter < len(STUFEN) - 1 - STUFEN.index(self._wunsch):
-                self.runter += 1
-                self._unter_seit = None
-                return True
+        if self._aufwaermen > 0:
+            self._aufwaermen -= 1
             return False
-        if (self.runter > 0 and self._unter_seit is not None
-                and jetzt - self._unter_seit >= ERHOLT_S - 1e-9):
-            self.runter -= 1
-            self._unter_seit = jetzt
+        self._fenster.append(ms)
+        if len(self._fenster) < BUDGET_FENSTER:
+            return False
+        s = sorted(self._fenster)
+        n = len(s)
+        self.mittel = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+        self._fenster = []
+        self._ueber = self._ueber + 1 if self.mittel > BUDGET_MS else 0
+        if self._ueber < BUDGET_FENSTER_FOLGE:
+            return False
+        self._ueber = 0
+        if self.runter < len(STUFEN) - 1 - STUFEN.index(self._wunsch):
+            self.runter += 1
+            self.leeren()           # Stufenwechsel: neu aufwärmen
             return True
         return False
 
