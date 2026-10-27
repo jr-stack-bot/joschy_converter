@@ -8,6 +8,7 @@ SKALA und SS ändern sich zur Laufzeit (setze_skalierung) - von außen immer als
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
@@ -169,6 +170,14 @@ class _Lazy(dict):
 
 EMB_GLYPH = {"ok": "check", "err": "warn"}
 
+# Zierringe (B3): (radius, linie_px, deckkraft, periode_grad, bilder, grad_pro_s), alles in logischen Pixeln.
+# Jede Symmetrieperiode liegt als Bildfolge mit 0,625° Schritt vor; der Tick-Ring ist der vierte Ring.
+RINGE = {"A": (136, 2.0, 110, 15.0, 24, +18.0),     # 24 Bögen à 9°
+         "B": (127, 1.5, 80, 10.0, 16, -12.0),      # 36 radiale Striche (r-4 … r+4)
+         "C": (118, 3.0, 60, 30.0, 48, +7.0)}       # 12 Bögen à 14°
+RING_SCHRITT = 0.625
+GLOW_SPARSAM = 10          # feste Glow-Stufe bei "sparsam"
+
 
 def theme_daten(name):
     return THEMES.get(name, THEMES[STANDARD_THEME])
@@ -199,6 +208,12 @@ class Grafik:
         self.kante_mini = ImageChops.subtract(self.schnitt_mini, self._harte_maske(P(S_MINI), -1.6 * SKALA))
         self.trans_gross = Image.new("RGB", (P(S_NORMAL), P(S_NORMAL)), TRANS_RGBA[:3])
         self.trans_mini = Image.new("RGB", (P(S_MINI), P(S_MINI)), TRANS_RGBA[:3])
+        # Zierringe: Bildfolgen entstehen nach dem ersten Bild im Hintergrund (bis dahin None)
+        self.ringe = None
+        self._ringe_thread = None
+        self._ringe_lock = threading.Lock()
+        self.glow_stufen = {name: self._glow(name) for name in RINGE}
+        self._glow_kombi = {}
         self.rebuild_theme(akt_theme)
 
     @staticmethod
@@ -262,6 +277,80 @@ class Grafik:
                        fill=165 if lang else 85, width=int((2.2 if lang else 1.6) * SS))
             frames.append(verkleinere(m))
         return frames
+
+    @staticmethod
+    def _ring_bild(name, k):
+        """Bild k eines Zierrings (um k·0,625° versetzt), direkt gezeichnet und danach verkleinert."""
+        radius, linie, deckkraft, periode, _, _ = RINGE[name]
+        N = 340 * SS
+        c = N / 2
+        m = Image.new("L", (N, N), 0)
+        d = ImageDraw.Draw(m)
+        versatz = k * RING_SCHRITT - 90
+        breite = max(1, int(linie * SS))
+        r = radius * SS
+        box = [c - r, c - r, c + r, c + r]
+        if name == "A":
+            for i in range(24):
+                a0 = i * 15 + versatz
+                d.arc(box, a0, a0 + 9, fill=deckkraft, width=breite)
+        elif name == "B":
+            for i in range(36):
+                a = i * 10 + versatz
+                d.line([polar(c, (radius - 4) * SS, a), polar(c, (radius + 4) * SS, a)], fill=deckkraft, width=breite)
+        else:
+            for i in range(12):
+                a0 = i * 30 + versatz
+                d.arc(box, a0, a0 + 14, fill=deckkraft, width=breite)
+        return verkleinere(m)
+
+    def ringe_bauen(self):
+        """Alle Bildfolgen der Zierringe erzeugen (synchron); self.ringe wird erst am Ende in einem Schritt gesetzt."""
+        ringe = {name: [self._ring_bild(name, k) for k in range(werte[4])] for name, werte in RINGE.items()}
+        self.ringe = ringe
+
+    def ringe_starten(self):
+        """ringe_bauen in einem Daemon-Thread starten (höchstens einmal je Grafik)."""
+        with self._ringe_lock:
+            if self._ringe_thread is not None or self.ringe is not None:
+                return
+            self._ringe_thread = threading.Thread(target=self.ringe_bauen, name="hud-ringe", daemon=True)
+        self._ringe_thread.start()
+
+    def ringe_bytes(self):
+        ringe = self.ringe
+        if not ringe:
+            return 0
+        return sum(b.width * b.height * len(b.getbands()) for folge in ringe.values() for b in folge)
+
+    def ring_maske(self, name, winkel):
+        _, _, _, periode, bilder, _ = RINGE[name]
+        return self.ringe[name][int((winkel % periode) / RING_SCHRITT) % bilder]
+
+    @staticmethod
+    def _glow(name):
+        """16 Helligkeitsstufen des weichgezeichneten Kreisrings unter einem Zierring (drehungsfrei)."""
+        radius, linie, deckkraft = RINGE[name][:3]
+        basis = verkleinere(ring_maske(radius - linie / 2, radius + linie / 2)).filter(ImageFilter.GaussianBlur(5 * SKALA))
+        return [basis.point(lambda v, k=(0.30 + 0.70 * i / 15) * deckkraft / 255: int(v * k)) for i in range(16)]
+
+    @staticmethod
+    def glow_index(puls):
+        i = int(round((puls - 0.30) / 0.70 * 15))
+        return max(0, min(15, i))
+
+    def glow_fuer(self, name, puls):
+        return self.glow_stufen[name][self.glow_index(puls)]
+
+    def glow_kombi(self, namen, i):
+        """Glow mehrerer Ringe in Stufe i als eine Maske (screen = wie nacheinander in derselben Farbe eingefügt)."""
+        m = self._glow_kombi.get((namen, i))
+        if m is None:
+            m = self.glow_stufen[namen[0]][i]
+            for name in namen[1:]:
+                m = ImageChops.screen(m, self.glow_stufen[name][i])
+            self._glow_kombi[(namen, i)] = m
+        return m
 
     def _radar(self):
         N = 340 * SS
@@ -624,6 +713,8 @@ class BildDaten:
     prog: float
     t_fertig: float         # Sekunden seit "fertig"
     t_lauf: float           # Sekunden seit Programmstart (jetzt - t0)
+    stufe: str = "aus"      # Effekt-Stufe: "voll" | "sparsam" | "aus"
+    w_ringe: tuple[float, float, float] = (0.0, 0.0, 0.0)   # Winkel der Zierringe A, B, C
 
 
 def zeichne(g, d):
@@ -637,6 +728,17 @@ def zeichne(g, d):
 
     rahmen.paste(farbe, (0, 0), g.spur)
     rahmen.paste(farbe, (0, 0), g.ticks[int((d.w_ticks % 15) / 0.5) % 30])
+    if d.stufe != "aus":
+        # Zierringe und Glow in derselben Farbe: Masken erst vereinen, dann nur einmal einfügen (spart Zeit).
+        # Die Ringe überlappen sich nicht (lighter ist exakt); Glow kommt per screen dazu.
+        namen = "ABC" if d.stufe == "voll" else "AB"
+        maske = g.glow_kombi(namen, g.glow_index(puls) if d.stufe == "voll" else GLOW_SPARSAM)
+        if g.ringe is not None:
+            ringe = g.ring_maske(namen[0], d.w_ringe[0])
+            for i in range(1, len(namen)):
+                ringe = ImageChops.lighter(ringe, g.ring_maske(namen[i], d.w_ringe[i]))
+            maske = ImageChops.screen(ringe, maske)
+        rahmen.paste(farbe, (0, 0), maske)
     rahmen.paste(farbe, (0, 0), g.radar_maske(d.w_radar))
 
     if d.hover:

@@ -3248,6 +3248,7 @@ class KreisApp:
         self.reset_id = None
         self.historie = []
         self.w_ticks = self.w_radar = self.w_hex = 0.0
+        self.w_ringe = [0.0, 0.0, 0.0]          # Zierringe A, B, C (hud_grafik.RINGE)
         self.t0 = self.t_letzt = self.t_fertig = time.time()
         self.funken = []
         self._press = None
@@ -3413,6 +3414,12 @@ class KreisApp:
         self.w_radar = (self.w_radar + v_r * dt) % 360
         self.w_hex = (self.w_hex + 22 * dt) % 360
         self.prog_anzeige += (self.fortschritt - self.prog_anzeige) * min(1.0, dt * 8)
+        stufe = self.effekte
+        if self.mini_mode and stufe == "voll":
+            stufe = "sparsam"                       # Mini-Modus: höchstens "sparsam"
+        faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
+        for i, name in enumerate("ABC"):
+            self.w_ringe[i] = (self.w_ringe[i] + hg.RINGE[name][5] * faktor * dt) % 360
 
         key = self._schluessel()
         anzeige = self._anzeige_format()
@@ -3426,7 +3433,8 @@ class KreisApp:
                       ekey=key if key in EMB_KEYS else kat, bogen_i=bogen_i, bogen_n=bogen_n,
                       w_ticks=self.w_ticks, w_radar=self.w_radar, w_hex=self.w_hex,
                       welle_radius=self.welle_radius, prog=self.prog_anzeige,
-                      t_fertig=jetzt - self.t_fertig, t_lauf=jetzt - self.t0)
+                      t_fertig=jetzt - self.t_fertig, t_lauf=jetzt - self.t0,
+                      stufe=stufe, w_ringe=tuple(self.w_ringe))
         out_img = hg.zeichne(self.g, d)
 
         if self.photo is None or self.photo.width() != out_img.width:
@@ -3435,6 +3443,8 @@ class KreisApp:
         else:
             self.photo.paste(out_img)       # vorhandenes Bild wiederverwenden statt jedes Mal neu anlegen
         self.c.tag_lower(self.bild_id)
+        if stufe != "aus" and self.g.ringe is None:
+            self.g.ringe_starten()                  # nach dem ersten Bild im Hintergrund (höchstens einmal je Grafik)
         if not self.mini_mode:
             self._funken_schritt()
         self._tick_id = self.root.after(self._tick_pause(), self._tick)
@@ -3982,11 +3992,12 @@ class KreisApp:
         top.focus_set()
 
     def _setze_effekte(self, wert):
-        """Effekt-Stufe setzen, speichern und im offenen Menü markieren (Wirkung auf das Bild: B3)."""
+        """Effekt-Stufe setzen, speichern, im offenen Menü markieren und das Bild sofort neu zeichnen."""
         if wert not in self.EFFEKT_STUFEN:
             return
         self.effekte = wert
         self._speichern()
+        self._wecken()                              # auch im Standbild sofort sichtbar
         if self._effekt_knoepfe:
             knoepfe, st = self._effekt_knoepfe
             for v, kn in knoepfe.items():
