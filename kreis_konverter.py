@@ -3154,7 +3154,7 @@ class KreisApp:
         wert = cfg.get("effekte") if isinstance(cfg, dict) else None
         return wert if isinstance(wert, str) and wert in KreisApp.EFFEKT_STUFEN else "voll"
 
-    def __init__(self):
+    def __init__(self, messen=False):
         self.dnd = False
         dpi_bewusst_machen()               # vor dem ersten Fenster (scharfe Darstellung bei 125/150/200 %)
         try:
@@ -3250,6 +3250,10 @@ class KreisApp:
         self.w_ticks = self.w_radar = self.w_hex = 0.0
         self.w_ringe = [0.0, 0.0, 0.0]          # Zierringe A, B, C (hud_grafik.RINGE)
         self.partikel = hg.Partikel(random.Random())
+        self._uhr = time.perf_counter               # misst die Zeichenzeit (B5)
+        self._budget = hg.Zeitbudget()
+        self._budget_geloggt = False
+        self._messung = hg.Messung() if messen else None
         self._ueb = None                        # laufender Übergang: (alt_key, alt_basis, t_start, v_alt)
         self._letzter_key = self._letzte_basis = None
         self._v_letzt = None                    # zuletzt benutzte Tempi (v_t, v_r, Ringfaktor)
@@ -3394,6 +3398,7 @@ class KreisApp:
         except tk.TclError:
             pass
         jetzt = time.time()
+        self._messung_pruefen(jetzt)
         if self._standbild_faellig(jetzt):          # Standbild: letztes Bild bleibt stehen
             self._standbild = True
             self.t_letzt = jetzt
@@ -3413,7 +3418,7 @@ class KreisApp:
         else:
             v_t, v_r = {"bereit": (10, 38), "laeuft": (60, 150), "fertig": (25, 60), "wahl": (22, 95)}[self.zustand]
             self.welle_radius = 40.0
-        stufe = self.effekte
+        stufe = self._budget.stufe(self.effekte)    # Zeitbudget: intern evtl. tiefer als eingestellt
         if self.mini_mode and stufe == "voll":
             stufe = "sparsam"                       # Mini-Modus: höchstens "sparsam"
         faktor = 2.5 if self.zustand == "laeuft" else (1.5 if (self.hover or self.zustand == "wahl") else 1.0)
@@ -3469,7 +3474,12 @@ class KreisApp:
                       t_fertig=jetzt - self.t_fertig, t_lauf=jetzt - self.t0,
                       stufe=stufe, w_ringe=tuple(self.w_ringe), partikel=partikel,
                       alt_key=alt_key, alt_basis=alt_basis, ueb=ueb)
+        t_a = self._uhr()
         out_img = hg.zeichne(self.g, d)
+        ms = (self._uhr() - t_a) * 1000
+        self._budget_melden(ms, jetzt)
+        if self._messung is not None:
+            self._messung.add("hover" if (self.zustand == "bereit" and self.hover) else self.zustand, ms, jetzt)
 
         if self.photo is None or self.photo.width() != out_img.width:
             self.photo = ImageTk.PhotoImage(out_img)
@@ -3485,6 +3495,33 @@ class KreisApp:
         if not self.mini_mode:
             self._funken_schritt()
         self._tick_id = self.root.after(self._tick_pause(), self._tick)
+
+    def _budget_melden(self, ms, jetzt):
+        """Zeitbudget (B5): bei der ersten internen Herabstufung der Sitzung genau einmal loggen."""
+        vorher = self._budget.runter
+        if self._budget.melde(ms, jetzt) and self._budget.runter > vorher and not self._budget_geloggt:
+            self._budget_geloggt = True
+            stufe = self._budget.stufe(self.effekte)
+            logge(f"Effekte intern herabgestuft auf {stufe} (Zeichenzeit {self._budget.mittel:.1f} ms)")
+
+    def _messung_pruefen(self, jetzt):
+        """--messen: nach 60 s einmal Mittel/95-Perzentil je Zustand ins Log und nach messung.txt."""
+        if self._messung is None or not self._messung.faellig(jetzt):
+            return
+        bericht = self._messung.bericht() or "messen: keine Bilder gezeichnet"
+        kopf = f"Messung {time.strftime('%Y-%m-%d %H:%M:%S')}, Effekte {self.effekte}, " \
+               f"Skalierung {hg.SKALA:g}, intern {self._budget.stufe(self.effekte)}"
+        logge(bericht)
+        try:
+            with open(os.path.join(daten_ordner(), "messung.txt"), "w", encoding="utf-8") as f:
+                f.write(kopf + "\n" + bericht + "\n")
+        except OSError:
+            pass
+        try:
+            if sys.stdout is not None:              # pythonw/exe ohne Konsole: kein stdout
+                print(kopf + "\n" + bericht, flush=True)
+        except Exception:
+            pass
 
     def _tick_pause(self):
         """Millisekunden bis zum nächsten Bild: während der Arbeit flüssig (30 fps), im Leerlauf 12 fps,
@@ -4919,7 +4956,7 @@ class KreisApp:
 
 
 if __name__ == "__main__":
-    app = KreisApp()
+    app = KreisApp(messen="--messen" in sys.argv[1:])
     # Dateien, die per "Öffnen mit" / "Senden an" übergeben wurden, sofort verarbeiten
     uebergeben = [a for a in sys.argv[1:] if os.path.exists(a)]
     if uebergeben:

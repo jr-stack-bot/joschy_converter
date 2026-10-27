@@ -226,6 +226,94 @@ class Partikel:
         return tuple(aus)
 
 
+STUFEN = ("voll", "sparsam", "aus")
+BUDGET_MS = 15.0           # Zeichenzeit, ab der (30 Bilder in Folge) eine Stufe tiefer gezeichnet wird
+BUDGET_FOLGE = 30
+ERHOLT_MS = 8.0            # Zeichenzeit, unter der es nach ERHOLT_S eine Stufe zurück geht
+ERHOLT_S = 10.0
+
+
+class Zeitbudget:
+    """Gleitender Mittelwert der Zeichenzeit (α = 0,1) und interne Abstufung der Effekte.
+
+    Die Abstufung zählt Stufen unterhalb der gewünschten Stufe; die gespeicherte Einstellung bleibt unberührt.
+    """
+
+    def __init__(self):
+        self.mittel = None
+        self.runter = 0             # Stufen unterhalb der gewünschten
+        self._wunsch = "voll"       # zuletzt an stufe() übergeben (begrenzt die Abstufung auf "aus")
+        self._ueber = 0             # Bilder in Folge mit mittel > BUDGET_MS
+        self._unter_seit = None     # Beginn der ununterbrochenen Zeit mit mittel < ERHOLT_MS
+
+    def melde(self, ms, jetzt):
+        """Meldet die Zeichenzeit eines Bildes. True, wenn sich die interne Abstufung geändert hat."""
+        self.mittel = ms if self.mittel is None else self.mittel + 0.1 * (ms - self.mittel)
+        if self.mittel > BUDGET_MS:
+            self._ueber += 1
+        else:
+            self._ueber = 0
+        if self.mittel < ERHOLT_MS:
+            if self._unter_seit is None:
+                self._unter_seit = jetzt
+        else:
+            self._unter_seit = None
+        if self._ueber >= BUDGET_FOLGE:
+            self._ueber = 0
+            if self.runter < len(STUFEN) - 1 - STUFEN.index(self._wunsch):
+                self.runter += 1
+                self._unter_seit = None
+                return True
+            return False
+        if (self.runter > 0 and self._unter_seit is not None
+                and jetzt - self._unter_seit >= ERHOLT_S - 1e-9):
+            self.runter -= 1
+            self._unter_seit = jetzt
+            return True
+        return False
+
+    def stufe(self, gewuenscht):
+        """Effektive Stufe: die gewünschte, um die interne Abstufung tiefer (höchstens bis "aus")."""
+        if gewuenscht not in STUFEN:
+            gewuenscht = "voll"
+        self._wunsch = gewuenscht
+        i = STUFEN.index(gewuenscht)
+        return STUFEN[min(len(STUFEN) - 1, i + self.runter)]
+
+
+class Messung:
+    """Messmodus (--messen): sammelt Zeichenzeiten je Zustand; nach `dauer` Sekunden einmal fällig."""
+
+    def __init__(self, dauer=60.0):
+        self.dauer = dauer
+        self.start = None           # beim ersten add/faellig gesetzt
+        self.werte = {}             # zustand -> [ms]
+        self._gemeldet = False
+
+    def add(self, zustand, ms, jetzt):
+        if self.start is None:
+            self.start = jetzt
+        self.werte.setdefault(zustand, []).append(ms)
+
+    def faellig(self, jetzt):
+        """Genau einmal True, ab start + dauer."""
+        if self.start is None:
+            self.start = jetzt
+        if self._gemeldet or jetzt < self.start + self.dauer:
+            return False
+        self._gemeldet = True
+        return True
+
+    def bericht(self):
+        zeilen = []
+        for zustand, liste in self.werte.items():
+            s = sorted(liste)
+            n = len(s)
+            p95 = s[math.ceil(0.95 * n) - 1]
+            zeilen.append(f"messen {zustand}: mittel {sum(s) / n:.1f} ms, p95 {p95:.1f} ms, n={n}")
+        return "\n".join(zeilen)
+
+
 def theme_daten(name):
     return THEMES.get(name, THEMES[STANDARD_THEME])
 
