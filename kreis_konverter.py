@@ -540,7 +540,8 @@ class JAI:
     MAX_TEILE = 5
     TAKT = 0.02           # s zwischen zwei Status-Abfragen
     LIMIT_TEIL = 4.0      # s, spätestens dann geht es weiter, wenn MCI keine Länge liefert
-    NACHLAUF = 0.3        # s nach dem Clipende warten, bevor close (MCI meldet 'stopped' zu früh)
+    NACHLAUF = 0.3        # s nach dem LETZTEN Clip warten, bevor close (MCI meldet 'stopped' zu früh)
+    NACHLAUF_TEIL = 0.03  # s zwischen zwei Teilen einer Folge (Satz soll flüssig klingen)
 
     def __init__(self, mci=None):
         self.an = False
@@ -598,7 +599,8 @@ class JAI:
 
     def _spiele(self, folge):
         """Spielt eine Folge; gibt einen neuen Auftrag zurück, wenn einer dazwischenkam."""
-        for pfad in folge:
+        for nr, pfad in enumerate(folge):
+            nachlauf = self.NACHLAUF if nr == len(folge) - 1 else self.NACHLAUF_TEIL
             neu = self._neuester()
             if neu is not None:
                 self._schliesse()
@@ -611,9 +613,9 @@ class JAI:
             self._sende(f"play {self.ALIAS} from 0")
             start = time.monotonic()
             # 'stopped' kommt schon, wenn der Decoder fertig ist – der Ton läuft dann noch aus.
-            # Darum erst nach Länge + Nachlauf (bzw. Nachlauf ab 'stopped') schließen.
+            # Darum erst nach Länge + Nachlauf (bzw. Nachlauf ab 'stopped') schließen/weiter.
             kappe = self.LIMIT_TEIL if laenge is None else max(self.LIMIT_TEIL,
-                                                                 laenge + self.NACHLAUF + 1.0)
+                                                                 laenge + nachlauf + 1.0)
             still_seit = None
             while True:
                 neu = self._neuester()
@@ -627,8 +629,8 @@ class JAI:
                     still_seit = None
                 elif still_seit is None:
                     still_seit = jetzt
-                if (still_seit is not None and jetzt - still_seit >= self.NACHLAUF
-                        and (laenge is None or jetzt - start >= laenge + self.NACHLAUF)):
+                if (still_seit is not None and jetzt - still_seit >= nachlauf
+                        and (laenge is None or jetzt - start >= laenge + nachlauf)):
                     break
                 time.sleep(self.TAKT)
         self._schliesse()
