@@ -539,7 +539,8 @@ class JAI:
     ALIAS = "kreis_jai"
     MAX_TEILE = 5
     TAKT = 0.02           # s zwischen zwei Status-Abfragen
-    LIMIT_TEIL = 4.0      # s, spätestens dann geht es mit dem nächsten Teil weiter
+    LIMIT_TEIL = 4.0      # s, spätestens dann geht es weiter, wenn MCI keine Länge liefert
+    NACHLAUF = 0.3        # s nach dem Clipende warten, bevor close (MCI meldet 'stopped' zu früh)
 
     def __init__(self, mci=None):
         self.an = False
@@ -578,6 +579,15 @@ class JAI:
             self._offen = False
             self._sende(f"close {self.ALIAS}")
 
+    def _laenge(self):
+        """Cliplänge in s laut MCI ('status … length' in ms); None, wenn unbrauchbar."""
+        try:
+            self._sende(f"set {self.ALIAS} time format milliseconds")
+            ms = int(str(self._sende(f"status {self.ALIAS} length")).strip())
+            return ms / 1000 if 0 < ms < 60000 else None
+        except Exception:
+            return None
+
     def _neuester(self, folge=None):
         """Nur der neueste Auftrag zählt; None, wenn die Warteschlange leer ist."""
         try:
@@ -597,16 +607,28 @@ class JAI:
             if self._sende(f'open "{pfad}" type mpegvideo alias {self.ALIAS}') != 0:
                 continue
             self._offen = True
+            laenge = self._laenge()
             self._sende(f"play {self.ALIAS} from 0")
             start = time.monotonic()
+            # 'stopped' kommt schon, wenn der Decoder fertig ist – der Ton läuft dann noch aus.
+            # Darum erst nach Länge + Nachlauf (bzw. Nachlauf ab 'stopped') schließen.
+            kappe = self.LIMIT_TEIL if laenge is None else max(self.LIMIT_TEIL,
+                                                                 laenge + self.NACHLAUF + 1.0)
+            still_seit = None
             while True:
                 neu = self._neuester()
                 if neu is not None:
                     self._schliesse()
                     return neu
-                if self._sende(f"status {self.ALIAS} mode") != "playing":
+                jetzt = time.monotonic()
+                if jetzt - start >= kappe:
                     break
-                if time.monotonic() - start >= self.LIMIT_TEIL:
+                if self._sende(f"status {self.ALIAS} mode") == "playing":
+                    still_seit = None
+                elif still_seit is None:
+                    still_seit = jetzt
+                if (still_seit is not None and jetzt - still_seit >= self.NACHLAUF
+                        and (laenge is None or jetzt - start >= laenge + self.NACHLAUF)):
                     break
                 time.sleep(self.TAKT)
         self._schliesse()
