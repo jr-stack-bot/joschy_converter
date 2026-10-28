@@ -50,6 +50,8 @@ Pfeil links / rechts   Format wechseln
 Pfeil hoch / runter    Kategorie wechseln (Bild, Office, PDF, ...)
 Enter, Leertaste, O    Dateien auswählen (beim QR-Code: Text eingeben)
 F                      Liste aller Formate
+In der Formatliste:    Mausrad oder Touchpad = blättern, Pfeil hoch / runter = Zeile wählen,
+                       Enter = übernehmen, Esc = schließen
 M, F10 oder Menütaste  Menü
 Z                      Zielordner wählen
 Esc                    Beenden (während einer Umwandlung: Abbrechen; nach dem Ende: zurück)
@@ -60,8 +62,22 @@ Im Modus FORMAT WÄHLEN: Pfeile = Format, Enter = Start, Esc = Abbrechen
 DAS MENÜ
 --------
 Zielordner wählen/zurücksetzen, Farbdesign, Qualität (100/92/85/75 %), Ordner danach öffnen,
-immer im Vordergrund, Töne, JAI-Stimme an/aus und "JAI testen", EXIF-Daten (z. B. Aufnahmeort) aus Fotos entfernen, Web-Voreinstellung,
+immer im Vordergrund, Töne, Effekte (voll/sparsam/aus), JAI-Stimme an/aus, "Ausführliche Ansagen"
+und "JAI testen", EXIF-Daten (z. B. Aufnahmeort) aus Fotos entfernen, Web-Voreinstellung,
 Ordner überwachen (neue Dateien dort werden automatisch umgewandelt), Protokoll, Lizenzen, Beenden.
+
+
+EFFEKTE
+-------
+Im Menü unter "Effekte" lässt sich einstellen, wie aufwendig der Kreis gezeichnet wird:
+  voll      alle Leucht- und Bewegungseffekte (Standard)
+  sparsam   weniger Effekte, schont schwächere PCs; der Mini-Kreis zeichnet höchstens "sparsam"
+  aus       schlichtes Bild ohne die zusätzlichen Effekte
+Zeichnet der PC zu langsam, stuft das Programm die Effekte für diese Sitzung selbst herab
+(steht dann im Fehler-Log). Die Einstellung wird gemerkt.
+Damit der Kreis im Leerlauf kaum Rechenzeit braucht, zeichnet er dann nur noch 12 Bilder pro
+Sekunde (bei der Arbeit 30) und bleibt nach 20 Sekunden ohne Eingabe als Standbild stehen.
+Sobald die Maus über den Kreis fährt oder geklickt wird, läuft er sofort weiter.
 
 
 
@@ -70,6 +86,9 @@ JAI-STIMME
 Auf Wunsch sagt JAI kurze Meldungen an, z. B. "Datei erkannt", "Fertig", "Alle Dateien fertig",
 "Bitte Format wählen", "Abgebrochen" oder "Das hat nicht geklappt". Einschalten im Menü unter
 "JAI-Stimme" (Standard: aus), ausprobieren mit "JAI testen". Die Einstellung wird gemerkt.
+Mit dem Schalter "Ausführliche Ansagen" (Standard: aus) sagt JAI mehr an: die gewählte Gruppe
+bzw. das Format, die Anzahl der Dateien, das Ziel und den Fortschritt
+(z. B. Halbzeit).
 Die Stimme ist eine eigene Erzeugung von Joschy mit ElevenLabs. Die Clips liegen im Ordner "jai"
 und stehen, sofern nicht anders vermerkt, unter derselben Lizenz AGPL-3.0 wie das Programm.
 Fehlt der Ordner, läuft das Programm normal, nur ohne Ansagen.

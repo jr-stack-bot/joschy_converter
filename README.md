@@ -20,12 +20,26 @@ Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Die fert
 
 Passt eine Datei nicht zum eingestellten Format, zeigt der Kreis „FORMAT WÄHLEN“ und bietet nur die
 passenden Formate an. Bedienung mit Maus und Tastatur: siehe [LIESMICH.txt](LIESMICH.txt).
+Die Liste aller Formate (Taste `F`) lässt sich mit Mausrad oder Touchpad blättern und mit ↑/↓ und
+Enter bedienen.
+
+## Effekte
+
+Im Menü unter „Effekte“ gibt es drei Stufen: **voll** (Standard), **sparsam** und **aus**.
+Zeichnet der PC zu langsam, stuft das Programm die Effekte für die laufende Sitzung automatisch herab;
+der Mini-Kreis zeichnet höchstens „sparsam“. Im Leerlauf zeichnet der Kreis nur 12 Bilder pro Sekunde
+und bleibt nach 20 Sekunden ohne Eingabe als Standbild stehen – so braucht er kaum Rechenzeit.
+Fährt die Maus über den Kreis oder wird geklickt, läuft er sofort weiter. Die Einstellung wird in
+`einstellungen.json` gespeichert.
 
 ## JAI-Stimme
 
 Optional sagt der Sprachassistent JAI kurze Meldungen an („Datei erkannt“, „Fertig“, „Bitte Format wählen“ …).
 Einschalten im Menü über „JAI-Stimme“ (Standard: aus), ausprobieren mit „JAI testen“. Die Einstellung wird
 in `einstellungen.json` gespeichert. Die Wiedergabe nutzt Windows selbst, es ist kein Zusatzpaket nötig.
+
+Der Schalter „Ausführliche Ansagen“ (Standard: aus) ergänzt weitere Ansagen: gewählte Gruppe bzw. Format,
+Anzahl der Dateien, Ziel und Fortschritt.
 
 Die Stimme ist eine eigene Erzeugung von Joschy mit ElevenLabs. Die Clips liegen im Ordner [`jai/`](jai/)
 im Repository und stehen, sofern nicht anders vermerkt, unter derselben Lizenz AGPL-3.0 wie das Programm.
