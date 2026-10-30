@@ -1,8 +1,15 @@
 # Kreis-Konverter
 
-Ein runder Datei-Konverter für Windows im HUD-Design: Dateien auf den Kreis ziehen, fertig.
+<p align="center"><img src="docs/screenshot.png" alt="Kreis-Konverter: der runde HUD-Kreis bei „FORMAT WÄHLEN“" width="440"></p>
+
+Der Kreis-Konverter ist ein runder, futuristischer Datei-Konverter für Windows im HUD-Design:
+Dateien einfach auf den Kreis ziehen, fertig. Er wandelt Bilder, Office-Dokumente, PDFs, Daten,
+E-Books, Archive, Audio und Video um und erzeugt QR-Codes. Formate wählt man in Gruppen mit den Pfeilen;
+passt eine Datei nicht, zeigt der Kreis „FORMAT WÄHLEN“ und bietet nur die möglichen Formate an.
+Auf Wunsch sagt die JAI-Stimme kurze Meldungen an, die Effekte lassen sich auf voll, sparsam oder aus stellen.
 Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Die fertige
 `KreisKonverter.exe` ist eine einzelne Datei, auf dem Zielrechner muss nichts installiert werden.
+Lizenz: AGPL-3.0.
 
 ## Was das Programm kann
 
