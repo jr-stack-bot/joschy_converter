@@ -11,6 +11,19 @@ Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Die fert
 `KreisKonverter.exe` ist eine einzelne Datei, auf dem Zielrechner muss nichts installiert werden.
 Lizenz: AGPL-3.0.
 
+## ⬇️ Download
+
+### **[➜ Kreis-Konverter herunterladen (ZIP)](https://github.com/jr-stack-bot/joschy_converter/releases/latest/download/KreisKonverter-v2.0.zip)**
+
+Alle Versionen: [Releases](https://github.com/jr-stack-bot/joschy_converter/releases/latest).
+Die ZIP enthält das Programm als Python-Quellcode (noch keine fertige `.exe`).
+
+1. ZIP herunterladen und entpacken.
+2. Falls noch nicht vorhanden: Python 3 von [python.org](https://www.python.org/downloads/) installieren
+   („Add python.exe to PATH“ anhaken) und die Pakete aus `requirements.txt` installieren.
+3. `start.bat` doppelklicken – oder mit `build_exe.bat` selbst eine `KreisKonverter.exe` bauen
+   (siehe [Starten und bauen](#starten-und-bauen)).
+
 ## Was das Programm kann
 
 | Bereich | Formate / Aktionen |
