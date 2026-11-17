@@ -13,10 +13,9 @@ Lizenz: AGPL-3.0.
 
 ## ⬇️ Download
 
-### **[➜ Kreis-Konverter herunterladen (ZIP)](https://github.com/jr-stack-bot/joschy_converter/releases/latest/download/KreisKonverter-v2.0.zip)**
+### **[➜ Kreis-Konverter herunterladen (ZIP)](https://github.com/jr-stack-bot/joschy_converter/archive/refs/heads/main.zip)**
 
-Alle Versionen: [Releases](https://github.com/jr-stack-bot/joschy_converter/releases/latest).
-Die ZIP enthält das Programm als Python-Quellcode (noch keine fertige `.exe`).
+Die ZIP enthält immer den aktuellen Stand als Python-Quellcode (noch keine fertige `.exe`).
 
 1. ZIP herunterladen und entpacken.
 2. Falls noch nicht vorhanden: Python 3 von [python.org](https://www.python.org/downloads/) installieren
