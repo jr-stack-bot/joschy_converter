@@ -3,7 +3,9 @@ KREIS-KONVERTER  -  Kurzanleitung
 
 Der Kreis-Konverter ist ein rundes Fenster, auf das man Dateien zieht. Er wandelt sie in das
 eingestellte Format um. Alles arbeitet auf dem eigenen PC, es wird nichts ins Internet geschickt.
-Auf dem Zielrechner muss nichts installiert werden: KreisKonverter.exe einfach starten.
+Eine fertige KreisKonverter.exe gibt es nicht zum Download. Die exe entsteht erst mit build_exe.bat
+(dafür ist Python 3 nötig, siehe STARTEN UND BAUEN); auf dem Zielrechner muss für die exe dann nichts
+installiert werden. Ohne exe startet man das Programm mit start.bat (Python 3 muss installiert sein).
 
 
 WAS DAS PROGRAMM KANN
@@ -96,7 +98,7 @@ Fehlt der Ordner, läuft das Programm normal, nur ohne Ansagen.
 
 STARTEN UND BAUEN
 -----------------
-Fertige Datei:   KreisKonverter.exe doppelklicken.
+Selbst gebaute exe: KreisKonverter.exe doppelklicken (eine fertige exe zum Download gibt es nicht).
 Ohne exe:        start.bat doppelklicken (Python 3 muss installiert sein).
 exe selbst bauen: build_exe.bat doppelklicken. Voraussetzung: Python 3.11 bis 3.14 von python.org
                  (beim Installieren "Add python.exe to PATH" anhaken) und Internet. Das Skript lädt

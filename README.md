@@ -7,8 +7,10 @@ Dateien einfach auf den Kreis ziehen, fertig. Er wandelt Bilder, Office-Dokument
 E-Books, Archive, Audio und Video um und erzeugt QR-Codes. Formate wählt man in Gruppen mit den Pfeilen;
 passt eine Datei nicht, zeigt der Kreis „FORMAT WÄHLEN“ und bietet nur die möglichen Formate an.
 Auf Wunsch sagt die JAI-Stimme kurze Meldungen an, die Effekte lassen sich auf voll, sparsam oder aus stellen.
-Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Die fertige
-`KreisKonverter.exe` ist eine einzelne Datei, auf dem Zielrechner muss nichts installiert werden.
+Alles läuft auf dem eigenen PC, es wird nichts ins Internet geschickt. Eine fertige `.exe` gibt es
+nicht zum Download: Die `KreisKonverter.exe` entsteht erst mit `build_exe.bat` (Python 3 nötig) und ist
+dann eine einzelne Datei, für die auf dem Zielrechner nichts installiert werden muss. Ohne exe startet
+man das Programm mit `start.bat`.
 Lizenz: AGPL-3.0.
 
 ## ⬇️ Download
